@@ -10,10 +10,10 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
-    {name = "Alliance of Genome Resources", email = "info@alliancegenome.org"},
+    {name = "Alliance of Genome Resources", email = "valearna@caltech.edu"},
 ]
 maintainers = [
-    {name = "AGR Software Team", email = "software@alliancegenome.org"},
+    {name = "Alliance Blue Team", email = "valearna@caltech.edu"},
 ]
 keywords = ["agr", "alliance", "genome", "curation", "api", "client"]
 classifiers = [
