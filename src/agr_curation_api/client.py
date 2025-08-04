@@ -2,12 +2,9 @@
 
 import json
 import logging
-import os
 import urllib.request
 from typing import Optional, Dict, Any, List, Union
 
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from pydantic import ValidationError
 from fastapi_okta.okta_utils import get_authentication_token, generate_headers
 
@@ -23,8 +20,6 @@ from .models import (
 from .exceptions import (
     AGRAPIError,
     AGRAuthenticationError,
-    AGRConnectionError,
-    AGRTimeoutError,
     AGRValidationError,
 )
 
@@ -44,10 +39,10 @@ class AGRCurationAPIClient:
             config = APIConfig()
         elif isinstance(config, dict):
             config = APIConfig(**config)
-        
+
         self.config = config
         self.base_url = str(self.config.base_url)
-        
+
         # Initialize authentication token if not provided
         if not self.config.okta_token:
             self.config.okta_token = get_authentication_token()
@@ -88,19 +83,19 @@ class AGRCurationAPIClient:
         """
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         headers = self._get_headers()
-        
+
         try:
             if method.upper() == "GET":
                 request = urllib.request.Request(url=url, headers=headers)
             else:
                 request_data = json.dumps(data or {}).encode('utf-8')
                 request = urllib.request.Request(
-                    url=url, 
-                    method=method.upper(), 
+                    url=url,
+                    method=method.upper(),
                     headers=headers,
                     data=request_data
                 )
-            
+
             with urllib.request.urlopen(request) as response:
                 if response.getcode() == 200:
                     logger.debug("Request successful")
@@ -108,7 +103,7 @@ class AGRCurationAPIClient:
                     return json.loads(res)
                 else:
                     raise AGRAPIError(f"Request failed with status: {response.getcode()}")
-                    
+
         except urllib.error.HTTPError as e:
             if e.code == 401:
                 raise AGRAuthenticationError("Authentication failed")
@@ -140,7 +135,7 @@ class AGRCurationAPIClient:
 
         url = f"gene/find?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
-        
+
         genes = []
         if "results" in response_data:
             for gene_data in response_data["results"]:
@@ -148,7 +143,7 @@ class AGRCurationAPIClient:
                     genes.append(Gene(**gene_data))
                 except ValidationError as e:
                     logger.warning(f"Failed to parse gene data: {e}")
-        
+
         return genes
 
     def get_gene(self, gene_id: str) -> Optional[Gene]:
@@ -179,7 +174,7 @@ class AGRCurationAPIClient:
         """
         url = f"species/findForPublic?limit={limit}&page={page}&view=ForPublic"
         response_data = self._make_request("POST", url, {})
-        
+
         species_list = []
         if "results" in response_data:
             for species_data in response_data["results"]:
@@ -187,7 +182,7 @@ class AGRCurationAPIClient:
                     species_list.append(Species(**species_data))
                 except ValidationError as e:
                     logger.warning(f"Failed to parse species data: {e}")
-        
+
         return species_list
 
     # Ontology endpoints
@@ -201,7 +196,7 @@ class AGRCurationAPIClient:
             List of OntologyTerm objects
         """
         response_data = self._make_request("GET", f"{node_type}/rootNodes")
-        
+
         terms = []
         if "entities" in response_data:
             for term_data in response_data["entities"]:
@@ -210,7 +205,7 @@ class AGRCurationAPIClient:
                         terms.append(OntologyTerm(**term_data))
                     except ValidationError as e:
                         logger.warning(f"Failed to parse ontology term: {e}")
-        
+
         return terms
 
     def get_ontology_node_children(self, node_curie: str, node_type: str) -> List[OntologyTerm]:
@@ -224,7 +219,7 @@ class AGRCurationAPIClient:
             List of child OntologyTerm objects
         """
         response_data = self._make_request("GET", f"{node_type}/{node_curie}/children")
-        
+
         terms = []
         if "entities" in response_data:
             for term_data in response_data["entities"]:
@@ -233,7 +228,7 @@ class AGRCurationAPIClient:
                         terms.append(OntologyTerm(**term_data))
                     except ValidationError as e:
                         logger.warning(f"Failed to parse ontology term: {e}")
-        
+
         return terms
 
     # Expression annotation endpoints
@@ -255,9 +250,9 @@ class AGRCurationAPIClient:
         """
         req_data = {"expressionAnnotationSubject.dataProvider.abbreviation": data_provider}
         url = f"gene-expression-annotation/findForPublic?limit={limit}&page={page}&view=ForPublic"
-        
+
         response_data = self._make_request("POST", url, req_data)
-        
+
         annotations = []
         if "results" in response_data:
             for annotation_data in response_data["results"]:
@@ -265,7 +260,7 @@ class AGRCurationAPIClient:
                     annotations.append(ExpressionAnnotation(**annotation_data))
                 except ValidationError as e:
                     logger.warning(f"Failed to parse expression annotation: {e}")
-        
+
         return annotations
 
     # Allele endpoints
@@ -291,7 +286,7 @@ class AGRCurationAPIClient:
 
         url = f"allele/find?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
-        
+
         alleles = []
         if "results" in response_data:
             for allele_data in response_data["results"]:
@@ -299,7 +294,7 @@ class AGRCurationAPIClient:
                     alleles.append(Allele(**allele_data))
                 except ValidationError as e:
                     logger.warning(f"Failed to parse allele data: {e}")
-        
+
         return alleles
 
     def get_allele(self, allele_id: str) -> Optional[Allele]:
@@ -338,7 +333,7 @@ class AGRCurationAPIClient:
         """
         url = f"{entity_type}/find?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, search_filters)
-        
+
         try:
             return APIResponse(**response_data)
         except ValidationError as e:

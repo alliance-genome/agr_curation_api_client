@@ -14,13 +14,13 @@ def test_automatic_authentication():
     """Test automatic authentication using environment variables."""
     # Create client without providing a token - should auto-authenticate
     client = AGRCurationAPIClient()
-    
+
     # Try to fetch some data to verify authentication works
     species_list = client.get_species()
-    
+
     assert isinstance(species_list, list)
     assert len(species_list) > 0
-    
+
     # Verify species have expected attributes
     if species_list:
         first_species = species_list[0]
@@ -33,12 +33,12 @@ def test_missing_environment_variables():
     # Save current environment
     saved_env = {}
     okta_vars = ['OKTA_DOMAIN', 'OKTA_API_AUDIENCE', 'OKTA_CLIENT_ID', 'OKTA_CLIENT_SECRET']
-    
+
     for var in okta_vars:
         saved_env[var] = os.environ.get(var)
         if var in os.environ:
             del os.environ[var]
-    
+
     try:
         # This should fail if environment variables are required
         with pytest.raises(Exception):  # Could be various exceptions depending on fastapi_okta implementation
@@ -56,7 +56,7 @@ def test_invalid_token():
     """Test behavior with an invalid token."""
     config = APIConfig(okta_token="invalid-token")
     client = AGRCurationAPIClient(config)
-    
+
     # This should raise an authentication error when trying to access the API
     with pytest.raises(AGRAuthenticationError):
         client.get_species()
@@ -71,7 +71,7 @@ def test_authenticated_endpoints(endpoint, method):
     # Create client with invalid token
     config = APIConfig(okta_token="invalid-token")
     client = AGRCurationAPIClient(config)
-    
+
     # All endpoints should raise authentication error with invalid token
     with pytest.raises(AGRAuthenticationError):
         getattr(client, method)()
