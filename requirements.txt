@@ -4,4 +4,4 @@ pydantic>=2.0.0
 httpx>=0.24.0
 tenacity>=8.0.0
 python-dateutil>=2.8.0
-fastapi-okta>=0.1.0
+git+https://github.com/alliance-genome/agr_fastapi_okta@v1.3#egg=fastapi_okta
