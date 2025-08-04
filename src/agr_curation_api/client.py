@@ -3,7 +3,8 @@
 import json
 import logging
 import urllib.request
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Type
+from types import TracebackType
 
 from pydantic import ValidationError
 from fastapi_okta.okta_utils import get_authentication_token, generate_headers
@@ -36,7 +37,7 @@ class AGRCurationAPIClient:
             config: API configuration object, dictionary, or None for defaults
         """
         if config is None:
-            config = APIConfig()
+            config = APIConfig()  # type: ignore[call-arg]
         elif isinstance(config, dict):
             config = APIConfig(**config)
 
@@ -50,14 +51,20 @@ class AGRCurationAPIClient:
     def _get_headers(self) -> Dict[str, str]:
         """Get headers with authentication token."""
         if self.config.okta_token:
-            return generate_headers(self.config.okta_token)
+            headers = generate_headers(self.config.okta_token)
+            return dict(headers)  # Ensure we return Dict[str, str]
         return {"Content-Type": "application/json", "Accept": "application/json"}
 
-    def __enter__(self):
+    def __enter__(self) -> "AGRCurationAPIClient":
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType]
+    ) -> None:
         """Context manager exit."""
         pass
 
@@ -100,7 +107,7 @@ class AGRCurationAPIClient:
                 if response.getcode() == 200:
                     logger.debug("Request successful")
                     res = response.read().decode('utf-8')
-                    return json.loads(res)
+                    return dict(json.loads(res))  # Ensure we return Dict[str, Any]
                 else:
                     raise AGRAPIError(f"Request failed with status: {response.getcode()}")
 

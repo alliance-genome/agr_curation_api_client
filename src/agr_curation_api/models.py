@@ -9,7 +9,7 @@ class APIConfig(BaseModel):
     """Configuration for AGR Curation API client."""
 
     base_url: HttpUrl = Field(
-        default="https://curation.alliancegenome.org/api",
+        default_factory=lambda: HttpUrl("https://curation.alliancegenome.org/api"),
         description="Base URL for the A-Team Curation API"
     )
     okta_token: Optional[str] = Field(None, description="Okta bearer token for authentication")
@@ -29,7 +29,7 @@ class APIConfig(BaseModel):
     )
 
     @field_validator('timeout', 'retry_delay')
-    def validate_timedelta(cls, v):
+    def validate_timedelta(cls, v: timedelta) -> timedelta:
         """Ensure timedelta is positive."""
         if v.total_seconds() <= 0:
             raise ValueError("Timeout and retry_delay must be positive")

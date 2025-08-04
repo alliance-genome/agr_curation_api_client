@@ -1,10 +1,12 @@
 """Exception classes for AGR Curation API Client."""
 
+from typing import Optional, Dict, Any
+
 
 class AGRAPIError(Exception):
     """Base exception for all AGR API errors."""
 
-    def __init__(self, message: str, status_code: int = None, response_data: dict = None):
+    def __init__(self, message: str, status_code: Optional[int] = None, response_data: Optional[Dict[str, Any]] = None):
         """Initialize AGR API error.
 
         Args:
