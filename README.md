@@ -24,6 +24,19 @@ cd agr_curation_api_client
 make install-dev
 ```
 
+## Authentication
+
+The client supports automatic Okta token generation using the same environment variables as other AGR services:
+
+```bash
+export OKTA_DOMAIN="your-okta-domain"
+export OKTA_API_AUDIENCE="your-api-audience"
+export OKTA_CLIENT_ID="your-client-id"
+export OKTA_CLIENT_SECRET="your-client-secret"
+```
+
+With these environment variables set, the client will automatically obtain an authentication token when initialized.
+
 ## Quick Start
 
 ### Basic Usage
@@ -31,14 +44,18 @@ make install-dev
 ```python
 from agr_curation_api import AGRCurationAPIClient, APIConfig
 
-# Configure the client (defaults to A-Team curation API)
+# Option 1: Automatic authentication (requires OKTA env vars)
+client = AGRCurationAPIClient()
+
+# Option 2: Manual token configuration
 config = APIConfig(
     base_url="https://curation.alliancegenome.org/api",
     okta_token="your-okta-token"  # Optional - will auto-retrieve if not provided
 )
+client = AGRCurationAPIClient(config)
 
-# Create client instance (config is optional - uses defaults)
-with AGRCurationAPIClient(config) as client:
+# Use the client
+with client:
     # Get genes from WormBase
     genes = client.get_genes(data_provider="WB", limit=10)
     
@@ -207,7 +224,10 @@ The `APIConfig` class supports the following options:
 The client uses the following environment variables for configuration:
 
 - `ATEAM_API`: Override the default A-Team API URL (default: uses production curation API)
-- Standard Okta environment variables for authentication (see fastapi-okta documentation)
+- `OKTA_DOMAIN`: Your Okta domain (required for automatic authentication)
+- `OKTA_API_AUDIENCE`: Your API audience (required for automatic authentication)
+- `OKTA_CLIENT_ID`: Your Okta client ID (required for automatic authentication)
+- `OKTA_CLIENT_SECRET`: Your Okta client secret (required for automatic authentication)
 
 ## Development
 
