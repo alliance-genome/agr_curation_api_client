@@ -20,12 +20,13 @@ jobs:
         pip install -e .
     
     - name: Test with pytest
+      env:
+        TMP_PATH: /tmp/test_data
       run: |
         pytest
     
     - name: Upload coverage reports
       uses: codecov/codecov-action@v4
-      if: matrix.python-version == '3.11'
       with:
         file: ./coverage.xml
         fail_ci_if_error: true
