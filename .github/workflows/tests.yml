@@ -24,9 +24,3 @@ jobs:
         TMP_PATH: /tmp/test_data
       run: |
         pytest
-    
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: true
