@@ -9,38 +9,20 @@ from types import TracebackType
 from pydantic import ValidationError
 from fastapi_okta.okta_utils import get_authentication_token, generate_headers
 
-# Handle both package and direct script execution
-try:
-    from .models import (
-        APIConfig,
-        Gene,
-        Species,
-        OntologyTerm,
-        ExpressionAnnotation,
-        Allele,
-        APIResponse,
-    )
-    from .exceptions import (
-        AGRAPIError,
-        AGRAuthenticationError,
-        AGRValidationError,
-    )
-except ImportError:
-    # When running as a script, use absolute imports
-    from models import (
-        APIConfig,
-        Gene,
-        Species,
-        OntologyTerm,
-        ExpressionAnnotation,
-        Allele,
-        APIResponse,
-    )
-    from exceptions import (
-        AGRAPIError,
-        AGRAuthenticationError,
-        AGRValidationError,
-    )
+from .models import (
+    APIConfig,
+    Gene,
+    Species,
+    OntologyTerm,
+    ExpressionAnnotation,
+    Allele,
+    APIResponse,
+)
+from .exceptions import (
+    AGRAPIError,
+    AGRAuthenticationError,
+    AGRValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -363,16 +345,3 @@ class AGRCurationAPIClient:
             return APIResponse(**response_data)
         except ValidationError as e:
             raise AGRValidationError(f"Invalid API response: {str(e)}")
-
-
-if __name__ == '__main__':
-    # Example usage
-    client = AGRCurationAPIClient()
-    try:
-        genes = client.get_genes(data_provider='WB', limit=10, page=0)
-        for gene in genes:
-            print(gene)
-    except AGRAuthenticationError as e:
-        logger.error(f"Authentication error: {e}")
-    except AGRValidationError as e:
-        logger.error(f"Validation error: {e}")
