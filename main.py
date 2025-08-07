@@ -16,13 +16,7 @@ sys.path.insert(0, 'src')
 
 def display_gene(gene: Gene, verbose: bool = False):
     """Display gene information."""
-    # Handle both nested objects and legacy dict format
-    symbol_text = "N/A"
-    if gene.gene_symbol:
-        if hasattr(gene.gene_symbol, 'display_text'):
-            symbol_text = gene.gene_symbol.display_text
-        elif isinstance(gene.gene_symbol, dict):
-            symbol_text = gene.gene_symbol.get('displayText', gene.gene_symbol.get('display_text', 'N/A'))
+    symbol_text = gene.gene_symbol.display_text if gene.gene_symbol else "N/A"
     
     print(f"\n{'='*60}")
     print(f"Gene: {symbol_text}")
@@ -32,23 +26,11 @@ def display_gene(gene: Gene, verbose: bool = False):
         print(f"Symbol: {symbol_text}")
 
     if gene.taxon:
-        taxon_name = "N/A"
-        if hasattr(gene.taxon, 'name') and gene.taxon.name:
-            taxon_name = gene.taxon.name
-        elif hasattr(gene.taxon, 'curie'):
-            taxon_name = gene.taxon.curie
-        elif isinstance(gene.taxon, dict):
-            taxon_name = gene.taxon.get('name', gene.taxon.get('id', gene.taxon.get('curie', 'N/A')))
+        taxon_name = gene.taxon.name if gene.taxon.name else gene.taxon.curie
         print(f"Taxon: {taxon_name}")
     
     if gene.gene_type:
-        type_name = "N/A"
-        if hasattr(gene.gene_type, 'name') and gene.gene_type.name:
-            type_name = gene.gene_type.name
-        elif hasattr(gene.gene_type, 'curie'):
-            type_name = gene.gene_type.curie
-        elif isinstance(gene.gene_type, dict):
-            type_name = gene.gene_type.get('name', gene.gene_type.get('curie', 'N/A'))
+        type_name = gene.gene_type.name if gene.gene_type.name else gene.gene_type.curie
         print(f"Type: {type_name}")
     
     print(f"Obsolete: {gene.obsolete}")
@@ -56,20 +38,10 @@ def display_gene(gene: Gene, verbose: bool = False):
     if verbose:
         print("\nAdditional Details:")
         if gene.gene_systematic_name:
-            systematic_name = "N/A"
-            if hasattr(gene.gene_systematic_name, 'display_text'):
-                systematic_name = gene.gene_systematic_name.display_text
-            elif isinstance(gene.gene_systematic_name, dict):
-                systematic_name = gene.gene_systematic_name.get('displayText', gene.gene_systematic_name.get('display_text', 'N/A'))
-            print(f"  Systematic Name: {systematic_name}")
+            print(f"  Systematic Name: {gene.gene_systematic_name.display_text}")
             
         if gene.gene_secondary_ids:
-            secondary_ids = []
-            for id_obj in gene.gene_secondary_ids:
-                if hasattr(id_obj, 'secondary_id'):
-                    secondary_ids.append(id_obj.secondary_id)
-                elif isinstance(id_obj, dict):
-                    secondary_ids.append(id_obj.get('secondaryId', 'N/A'))
+            secondary_ids = [id_obj.secondary_id for id_obj in gene.gene_secondary_ids if hasattr(id_obj, 'secondary_id')]
             if secondary_ids:
                 print(f"  Secondary IDs: {', '.join(secondary_ids)}")
                 
@@ -82,18 +54,11 @@ def display_gene(gene: Gene, verbose: bool = False):
 def display_species(species: Species, verbose: bool = False):
     """Display species information."""
     # Get species name from various sources
-    species_name = "N/A"
-    if hasattr(species, 'name') and species.name:
-        species_name = species.name
-    elif hasattr(species, 'display_name') and species.display_name:
-        species_name = species.display_name
-    elif hasattr(species, 'curie') and species.curie:
-        species_name = species.curie
-    elif species.taxon:
-        if hasattr(species.taxon, 'name') and species.taxon.name:
-            species_name = species.taxon.name
-        elif hasattr(species.taxon, 'curie'):
-            species_name = species.taxon.curie
+    species_name = (species.display_name or 
+                   species.curie or
+                   (species.taxon.name if species.taxon and species.taxon.name else None) or
+                   (species.taxon.curie if species.taxon else None) or
+                   "N/A")
     
     print(f"\n{'='*60}")
     print(f"Species: {species_name}")
@@ -149,29 +114,13 @@ def display_allele(allele: Allele, verbose: bool = False):
     print(f"{'='*60}")
     
     if allele.allele_symbol:
-        symbol_text = "N/A"
-        if hasattr(allele.allele_symbol, 'display_text'):
-            symbol_text = allele.allele_symbol.display_text
-        elif isinstance(allele.allele_symbol, dict):
-            symbol_text = allele.allele_symbol.get('display_text', allele.allele_symbol.get('displayText', 'N/A'))
-        print(f"Symbol: {symbol_text}")
+        print(f"Symbol: {allele.allele_symbol.display_text}")
     
     if allele.allele_full_name:
-        full_name_text = "N/A"
-        if hasattr(allele.allele_full_name, 'display_text'):
-            full_name_text = allele.allele_full_name.display_text
-        elif isinstance(allele.allele_full_name, dict):
-            full_name_text = allele.allele_full_name.get('display_text', allele.allele_full_name.get('displayText', 'N/A'))
-        print(f"Full Name: {full_name_text}")
+        print(f"Full Name: {allele.allele_full_name.display_text}")
     
     if allele.taxon:
-        taxon_name = "N/A"
-        if hasattr(allele.taxon, 'name') and allele.taxon.name:
-            taxon_name = allele.taxon.name
-        elif hasattr(allele.taxon, 'curie'):
-            taxon_name = allele.taxon.curie
-        elif isinstance(allele.taxon, dict):
-            taxon_name = allele.taxon.get('name', allele.taxon.get('curie', 'N/A'))
+        taxon_name = allele.taxon.name if allele.taxon.name else allele.taxon.curie
         print(f"Taxon: {taxon_name}")
     
     print(f"Obsolete: {allele.obsolete}")
@@ -182,11 +131,10 @@ def display_allele(allele: Allele, verbose: bool = False):
     if verbose:
         print("\nAdditional Details:")
         if allele.laboratory_of_origin:
-            lab_name = allele.laboratory_of_origin
             if hasattr(allele.laboratory_of_origin, 'name'):
-                lab_name = allele.laboratory_of_origin.name
-            elif hasattr(allele.laboratory_of_origin, 'abbreviation'):
-                lab_name = allele.laboratory_of_origin.abbreviation
+                lab_name = allele.laboratory_of_origin.name or allele.laboratory_of_origin.abbreviation
+            else:
+                lab_name = str(allele.laboratory_of_origin)
             print(f"  Lab of Origin: {lab_name}")
             
         if allele.is_extrachromosomal is not None:
