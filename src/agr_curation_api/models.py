@@ -1,8 +1,32 @@
 """Data models for AGR Curation API Client."""
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 from datetime import datetime, timedelta
+
+# Import nested models
+from .nested_models import (
+    GeneSymbolSlotAnnotation,
+    GeneFullNameSlotAnnotation,
+    GeneSystematicNameSlotAnnotation,
+    GeneSynonymSlotAnnotation,
+    GeneSecondaryIdSlotAnnotation,
+    AlleleSymbolSlotAnnotation,
+    AlleleFullNameSlotAnnotation,
+    AlleleSynonymSlotAnnotation,
+    NCBITaxonTerm,
+    SOTerm,
+    GOTerm,
+    VocabularyTerm,
+    CrossReference,
+    DataProvider,
+    PublicationRef,
+    Laboratory,
+    Person,
+    GeneGenomicLocationAssociation,
+    AlleleGeneAssociation,
+    Note,
+)
 
 
 class APIConfig(BaseModel):
@@ -68,15 +92,62 @@ class Gene(AuditedObject):
 
     curie: Optional[str] = Field(None, description="Compact URI")
     primary_external_id: Optional[str] = Field(None, alias="primaryExternalId", description="Primary external ID")
-    gene_symbol: Optional[dict] = Field(None, alias="geneSymbol", description="Gene symbol object")
-    gene_full_name: Optional[dict] = Field(None, alias="geneFullName", description="Gene full name object")
-    gene_systematic_name: Optional[dict] = Field(None, alias="geneSystematicName", description="Gene systematic name")
-    gene_synonyms: Optional[List[dict]] = Field(None, alias="geneSynonyms", description="Gene synonyms")
-    gene_secondary_ids: Optional[List[dict]] = Field(None, alias="geneSecondaryIds", description="Secondary identifiers")
-    gene_type: Optional[dict] = Field(None, alias="geneType", description="SOTerm for gene type")
-    data_provider: Optional[dict] = Field(None, alias="dataProvider", description="Data provider")
-    taxon: Optional[dict] = Field(None, description="Taxon information")
+    
+    # Nested objects instead of dicts
+    gene_symbol: Optional[Union[GeneSymbolSlotAnnotation, dict]] = Field(None, alias="geneSymbol", description="Gene symbol object")
+    gene_full_name: Optional[Union[GeneFullNameSlotAnnotation, dict]] = Field(None, alias="geneFullName", description="Gene full name object")
+    gene_systematic_name: Optional[Union[GeneSystematicNameSlotAnnotation, dict]] = Field(None, alias="geneSystematicName", description="Gene systematic name")
+    gene_synonyms: Optional[List[Union[GeneSynonymSlotAnnotation, dict]]] = Field(None, alias="geneSynonyms", description="Gene synonyms")
+    gene_secondary_ids: Optional[List[Union[GeneSecondaryIdSlotAnnotation, dict]]] = Field(None, alias="geneSecondaryIds", description="Secondary identifiers")
+    gene_type: Optional[Union[SOTerm, dict]] = Field(None, alias="geneType", description="SOTerm for gene type")
+    data_provider: Optional[Union[DataProvider, dict]] = Field(None, alias="dataProvider", description="Data provider")
+    taxon: Optional[Union[NCBITaxonTerm, dict]] = Field(None, description="Taxon information")
+    cross_references: Optional[List[Union[CrossReference, dict]]] = Field(None, alias="crossReferences", description="Cross references")
+    
+    # Simple fields
     obsolete: bool = Field(False, description="Whether gene is obsolete")
+
+    @field_validator('gene_symbol', 'gene_full_name', 'gene_systematic_name', mode='before')
+    def parse_name_annotations(cls, v):
+        """Parse name slot annotations from dict if needed."""
+        if isinstance(v, dict):
+            # Try to parse as proper model, fall back to dict if parsing fails
+            try:
+                if 'displayText' in v or 'display_text' in v:
+                    return GeneSymbolSlotAnnotation(**v)
+            except:
+                pass
+        return v
+    
+    @field_validator('gene_type', mode='before')
+    def parse_gene_type(cls, v):
+        """Parse gene type from dict if needed."""
+        if isinstance(v, dict) and 'curie' in v:
+            try:
+                return SOTerm(**v)
+            except:
+                pass
+        return v
+    
+    @field_validator('taxon', mode='before')
+    def parse_taxon(cls, v):
+        """Parse taxon from dict if needed."""
+        if isinstance(v, dict) and 'curie' in v:
+            try:
+                return NCBITaxonTerm(**v)
+            except:
+                pass
+        return v
+    
+    @field_validator('data_provider', mode='before')
+    def parse_data_provider(cls, v):
+        """Parse data provider from dict if needed."""
+        if isinstance(v, dict) and 'sourceOrganization' in v:
+            try:
+                return DataProvider(**v)
+            except:
+                pass
+        return v
 
     class Config:
         populate_by_name = True
@@ -86,13 +157,23 @@ class Species(AuditedObject):
     """Species model from A-Team curation API."""
 
     curie: Optional[str] = Field(None, description="Compact URI")
-    taxon: Optional[dict] = Field(None, description="NCBITaxonTerm")
+    taxon: Optional[Union[NCBITaxonTerm, dict]] = Field(None, description="NCBITaxonTerm")
     abbreviation: Optional[str] = Field(None, description="Species abbreviation")
     display_name: Optional[str] = Field(None, alias="displayName", description="Display name")
     full_name: Optional[str] = Field(None, alias="fullName", description="Full scientific name")
     genome_assembly: Optional[str] = Field(None, alias="genomeAssembly", description="Current canonical genome assembly")
     common_names: Optional[List[str]] = Field(None, alias="commonNames", description="List of common names")
     phylogenetic_order: Optional[int] = Field(None, alias="phylogeneticOrder", description="Order for species sorting")
+
+    @field_validator('taxon', mode='before')
+    def parse_taxon(cls, v):
+        """Parse taxon from dict if needed."""
+        if isinstance(v, dict) and 'curie' in v:
+            try:
+                return NCBITaxonTerm(**v)
+            except:
+                pass
+        return v
 
     class Config:
         populate_by_name = True
@@ -169,24 +250,63 @@ class Allele(AuditedObject):
 
     curie: Optional[str] = Field(None, description="Compact URI")
     primary_external_id: Optional[str] = Field(None, alias="primaryExternalId", description="Primary external ID")
-    allele_symbol: Optional[dict] = Field(None, alias="alleleSymbol", description="Allele symbol")
-    allele_full_name: Optional[dict] = Field(None, alias="alleleFullName", description="Allele full name")
-    allele_synonyms: Optional[List[dict]] = Field(None, alias="alleleSynonyms", description="Allele synonyms")
-    references: Optional[List[dict]] = Field(None, description="Supporting references")
-    laboratory_of_origin: Optional[str] = Field(None, alias="laboratoryOfOrigin", description="Originating laboratory")
+    
+    # Nested objects instead of dicts
+    allele_symbol: Optional[Union[AlleleSymbolSlotAnnotation, dict]] = Field(None, alias="alleleSymbol", description="Allele symbol")
+    allele_full_name: Optional[Union[AlleleFullNameSlotAnnotation, dict]] = Field(None, alias="alleleFullName", description="Allele full name")
+    allele_synonyms: Optional[List[Union[AlleleSynonymSlotAnnotation, dict]]] = Field(None, alias="alleleSynonyms", description="Allele synonyms")
+    references: Optional[List[Union[PublicationRef, dict]]] = Field(None, description="Supporting references")
+    
+    # Laboratory and origin info
+    laboratory_of_origin: Optional[Union[Laboratory, str, dict]] = Field(None, alias="laboratoryOfOrigin", description="Originating laboratory")
+    data_provider: Optional[Union[DataProvider, dict]] = Field(None, alias="dataProvider", description="Data provider")
+    taxon: Optional[Union[NCBITaxonTerm, dict]] = Field(None, description="Taxon information")
+    
+    # Flags
     is_extinct: Optional[bool] = Field(None, alias="isExtinct", description="Whether allele is extinct")
     is_extrachromosomal: Optional[bool] = Field(None, alias="isExtrachromosomal", description="Whether allele is extrachromosomal")
     is_integrated: Optional[bool] = Field(None, alias="isIntegrated", description="Whether allele is integrated")
-    data_provider: Optional[dict] = Field(None, alias="dataProvider", description="Data provider")
-    taxon: Optional[dict] = Field(None, description="Taxon information")
     obsolete: bool = Field(False, description="Whether allele is obsolete")
-    gene_associations: Optional[List[dict]] = Field(None, alias="geneAssociations", description="Associated genes")
+    
+    # Association lists
+    gene_associations: Optional[List[Union[AlleleGeneAssociation, dict]]] = Field(None, alias="geneAssociations", description="Associated genes")
     protein_associations: Optional[List[dict]] = Field(None, alias="proteinAssociations", description="Associated proteins")
     transcript_associations: Optional[List[dict]] = Field(None, alias="transcriptAssociations", description="Associated transcripts")
     variant_associations: Optional[List[dict]] = Field(None, alias="variantAssociations", description="Associated variants")
     cell_line_associations: Optional[List[dict]] = Field(None, alias="cellLineAssociations", description="Associated cell lines")
     image_associations: Optional[List[dict]] = Field(None, alias="imageAssociations", description="Associated images")
     construct_associations: Optional[List[dict]] = Field(None, alias="constructAssociations", description="Associated constructs")
+
+    @field_validator('allele_symbol', 'allele_full_name', mode='before')
+    def parse_name_annotations(cls, v):
+        """Parse name slot annotations from dict if needed."""
+        if isinstance(v, dict):
+            try:
+                if 'displayText' in v or 'display_text' in v:
+                    return AlleleSymbolSlotAnnotation(**v)
+            except:
+                pass
+        return v
+    
+    @field_validator('taxon', mode='before')
+    def parse_taxon(cls, v):
+        """Parse taxon from dict if needed."""
+        if isinstance(v, dict) and 'curie' in v:
+            try:
+                return NCBITaxonTerm(**v)
+            except:
+                pass
+        return v
+    
+    @field_validator('data_provider', mode='before')
+    def parse_data_provider(cls, v):
+        """Parse data provider from dict if needed."""
+        if isinstance(v, dict) and 'sourceOrganization' in v:
+            try:
+                return DataProvider(**v)
+            except:
+                pass
+        return v
 
     class Config:
         populate_by_name = True

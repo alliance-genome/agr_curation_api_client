@@ -5,3 +5,9 @@ httpx>=0.24.0
 tenacity>=8.0.0
 python-dateutil>=2.8.0
 git+https://github.com/alliance-genome/agr_fastapi_okta@v1.3#egg=fastapi_okta
+
+# LinkML dependencies for schema-based model generation
+linkml>=1.7.0
+linkml-runtime>=1.7.0
+pyyaml>=6.0
+black>=23.0.0  # For code formatting
