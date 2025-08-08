@@ -1,39 +1,18 @@
 """Data models for AGR Curation API Client."""
 
+import os
 from typing import Optional, Dict, Any, List, Union
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, ConfigDict, model_validator
 from datetime import datetime, timedelta
-
-# Import nested models
-from .nested_models import (
-    GeneSymbolSlotAnnotation,
-    GeneFullNameSlotAnnotation,
-    GeneSystematicNameSlotAnnotation,
-    GeneSynonymSlotAnnotation,
-    GeneSecondaryIdSlotAnnotation,
-    AlleleSymbolSlotAnnotation,
-    AlleleFullNameSlotAnnotation,
-    AlleleSynonymSlotAnnotation,
-    NCBITaxonTerm,
-    SOTerm,
-    GOTerm,
-    VocabularyTerm,
-    CrossReference,
-    DataProvider,
-    PublicationRef,
-    Laboratory,
-    Person,
-    GeneGenomicLocationAssociation,
-    AlleleGeneAssociation,
-    Note,
-)
 
 
 class APIConfig(BaseModel):
     """Configuration for AGR Curation API client."""
 
     base_url: HttpUrl = Field(
-        default_factory=lambda: HttpUrl("https://curation.alliancegenome.org/api"),
+        default_factory=lambda: HttpUrl(
+            os.getenv("ATEAM_API_URL", "https://curation.alliancegenome.org/api")
+        ),
         description="Base URL for the A-Team Curation API"
     )
     okta_token: Optional[str] = Field(None, description="Okta bearer token for authentication")
@@ -67,257 +46,285 @@ class APIConfig(BaseModel):
         }
 
 
-class AuditedObject(BaseModel):
-    """Base class for audited objects with tracking fields."""
+class APIResponse(BaseModel):
+    """Generic API response model."""
 
-    created_by: Optional[Any] = Field(None, alias="createdBy", description="User who created the record")
-    date_created: Optional[datetime] = Field(None, alias="dateCreated", description="Date record was created")
-    updated_by: Optional[Any] = Field(None, alias="updatedBy", description="User who last updated the record")
-    date_updated: Optional[datetime] = Field(None, alias="dateUpdated", description="Date record was last updated")
-
-    @field_validator('created_by', 'updated_by', mode='before')
-    def extract_user_id(cls, v):
-        """Extract user ID from object if provided as dict."""
-        if isinstance(v, dict):
-            # Try to extract the uniqueId or id from the user object
-            return v.get('uniqueId') or v.get('id') or str(v)
-        return v
-
-    class Config:
-        populate_by_name = True
+    total_results: Optional[int] = Field(None, alias="totalResults")
+    returned_records: Optional[int] = Field(None, alias="returnedRecords")
+    results: Optional[List[Dict[str, Any]]] = None
+    entities: Optional[List[Dict[str, Any]]] = None
+    aggregations: Optional[Dict[str, Any]] = None
 
 
-class Gene(AuditedObject):
-    """Gene model from A-Team curation API."""
+# API Response Models that match actual AGR Curation API responses
 
-    curie: Optional[str] = Field(None, description="Compact URI")
-    primary_external_id: Optional[str] = Field(None, alias="primaryExternalId", description="Primary external ID")
+class Person(BaseModel):
+    """Person model for createdBy/updatedBy fields."""
     
-    # Nested objects instead of dicts
-    gene_symbol: Optional[Union[GeneSymbolSlotAnnotation, dict]] = Field(None, alias="geneSymbol", description="Gene symbol object")
-    gene_full_name: Optional[Union[GeneFullNameSlotAnnotation, dict]] = Field(None, alias="geneFullName", description="Gene full name object")
-    gene_systematic_name: Optional[Union[GeneSystematicNameSlotAnnotation, dict]] = Field(None, alias="geneSystematicName", description="Gene systematic name")
-    gene_synonyms: Optional[List[Union[GeneSynonymSlotAnnotation, dict]]] = Field(None, alias="geneSynonyms", description="Gene synonyms")
-    gene_secondary_ids: Optional[List[Union[GeneSecondaryIdSlotAnnotation, dict]]] = Field(None, alias="geneSecondaryIds", description="Secondary identifiers")
-    gene_type: Optional[Union[SOTerm, dict]] = Field(None, alias="geneType", description="SOTerm for gene type")
-    data_provider: Optional[Union[DataProvider, dict]] = Field(None, alias="dataProvider", description="Data provider")
-    taxon: Optional[Union[NCBITaxonTerm, dict]] = Field(None, description="Taxon information")
-    cross_references: Optional[List[Union[CrossReference, dict]]] = Field(None, alias="crossReferences", description="Cross references")
+    id: Optional[int] = None
+    uniqueId: Optional[str] = None
+    dateCreated: Optional[datetime] = None
+    dateUpdated: Optional[datetime] = None
     
-    # Simple fields
-    obsolete: bool = Field(False, description="Whether gene is obsolete")
+    model_config = ConfigDict(extra='allow')
 
-    @field_validator('gene_symbol', 'gene_full_name', 'gene_systematic_name', mode='before')
-    def parse_name_annotations(cls, v):
-        """Parse name slot annotations from dict if needed."""
-        if isinstance(v, dict):
-            # Try to parse as proper model, fall back to dict if parsing fails
-            try:
-                if 'displayText' in v or 'display_text' in v:
-                    return GeneSymbolSlotAnnotation(**v)
-            except:
-                pass
-        return v
+
+class ResourceDescriptorPage(BaseModel):
+    """Resource descriptor page model."""
     
-    @field_validator('gene_type', mode='before')
-    def parse_gene_type(cls, v):
-        """Parse gene type from dict if needed."""
-        if isinstance(v, dict) and 'curie' in v:
-            try:
-                return SOTerm(**v)
-            except:
-                pass
-        return v
+    id: Optional[int] = None
+    internal: Optional[bool] = None
+    obsolete: Optional[bool] = None
+    name: Optional[str] = None
+    url: Optional[str] = None
     
-    @field_validator('taxon', mode='before')
-    def parse_taxon(cls, v):
-        """Parse taxon from dict if needed."""
-        if isinstance(v, dict) and 'curie' in v:
-            try:
-                return NCBITaxonTerm(**v)
-            except:
-                pass
-        return v
+    model_config = ConfigDict(extra='allow')
+
+
+class CrossReference(BaseModel):
+    """Cross reference model that matches API response."""
     
-    @field_validator('data_provider', mode='before')
-    def parse_data_provider(cls, v):
-        """Parse data provider from dict if needed."""
-        if isinstance(v, dict) and 'sourceOrganization' in v:
-            try:
-                return DataProvider(**v)
-            except:
-                pass
-        return v
+    id: Optional[int] = None
+    createdBy: Optional[Union[str, Person]] = None
+    updatedBy: Optional[Union[str, Person]] = None
+    internal: Optional[bool] = None
+    obsolete: Optional[bool] = None
+    dbDateCreated: Optional[datetime] = None
+    dbDateUpdated: Optional[datetime] = None
+    resourceDescriptorPage: Optional[ResourceDescriptorPage] = None
+    
+    # Original CrossReference fields
+    displayName: Optional[str] = None
+    pageArea: Optional[str] = None
+    prefix: Optional[str] = None
+    referencedCurie: Optional[str] = None
+    url: Optional[str] = None
+    
+    model_config = ConfigDict(extra='allow')
 
-    class Config:
-        populate_by_name = True
+
+class DataProvider(BaseModel):
+    """Data provider model that matches API response."""
+    
+    type: Optional[str] = None
+    id: Optional[int] = None
+    internal: Optional[bool] = None
+    obsolete: Optional[bool] = None
+    abbreviation: Optional[str] = None
+    fullName: Optional[str] = None
+    homepageResourceDescriptorPage: Optional[ResourceDescriptorPage] = None
+    sourceOrganization: Optional[str] = None
+    crossReference: Optional[CrossReference] = None
+    
+    model_config = ConfigDict(extra='allow')
+    
+    @model_validator(mode='before')
+    @classmethod
+    def extract_source_organization(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract sourceOrganization from abbreviation if not present."""
+        if 'sourceOrganization' not in values and 'abbreviation' in values:
+            values['sourceOrganization'] = values['abbreviation']
+        return values
 
 
-class Species(AuditedObject):
-    """Species model from A-Team curation API."""
+class NameType(BaseModel):
+    """Name type model."""
+    
+    id: Optional[int] = None
+    internal: Optional[bool] = None
+    obsolete: Optional[bool] = None
+    name: Optional[str] = None
+    definition: Optional[str] = None
+    
+    model_config = ConfigDict(extra='allow')
 
-    curie: Optional[str] = Field(None, description="Compact URI")
-    taxon: Optional[Union[NCBITaxonTerm, dict]] = Field(None, description="NCBITaxonTerm")
-    abbreviation: Optional[str] = Field(None, description="Species abbreviation")
-    display_name: Optional[str] = Field(None, alias="displayName", description="Display name")
-    full_name: Optional[str] = Field(None, alias="fullName", description="Full scientific name")
-    genome_assembly: Optional[str] = Field(None, alias="genomeAssembly", description="Current canonical genome assembly")
-    common_names: Optional[List[str]] = Field(None, alias="commonNames", description="List of common names")
-    phylogenetic_order: Optional[int] = Field(None, alias="phylogeneticOrder", description="Order for species sorting")
 
-    @field_validator('taxon', mode='before')
-    def parse_taxon(cls, v):
-        """Parse taxon from dict if needed."""
-        if isinstance(v, dict) and 'curie' in v:
-            try:
-                return NCBITaxonTerm(**v)
-            except:
-                pass
-        return v
+class SynonymScope(BaseModel):
+    """Synonym scope model."""
+    
+    id: Optional[int] = None
+    internal: Optional[bool] = None
+    obsolete: Optional[bool] = None
+    name: Optional[str] = None
+    
+    model_config = ConfigDict(extra='allow')
 
-    class Config:
-        populate_by_name = True
+
+class SlotAnnotation(BaseModel):
+    """Slot annotation model that matches API response."""
+    
+    id: Optional[int] = None
+    createdBy: Optional[Union[str, Person]] = None
+    updatedBy: Optional[Union[str, Person]] = None
+    dbDateCreated: Optional[datetime] = None
+    dbDateUpdated: Optional[datetime] = None
+    
+    displayText: Optional[str] = None
+    formatText: Optional[str] = None
+    nameType: Optional[Union[str, NameType]] = None
+    synonymScope: Optional[Union[str, SynonymScope]] = None
+    
+    model_config = ConfigDict(extra='allow')
+
+
+class SecondaryId(BaseModel):
+    """Secondary ID model."""
+    
+    id: Optional[int] = None
+    createdBy: Optional[Union[str, Person]] = None
+    updatedBy: Optional[Union[str, Person]] = None
+    dbDateCreated: Optional[datetime] = None
+    dbDateUpdated: Optional[datetime] = None
+    secondaryId: Optional[str] = None
+    
+    model_config = ConfigDict(extra='allow')
+
+
+class Gene(BaseModel):
+    """Gene model that matches the actual API response structure."""
+    
+    # Primary fields that may differ from schema
+    type: Optional[str] = None
+    id: Optional[int] = None
+    primaryExternalId: Optional[str] = None  # This is often used instead of curie
+    curie: Optional[str] = None  # May be missing, use primaryExternalId as fallback
+    
+    # Audit fields that can be objects or strings
+    createdBy: Optional[Union[str, Person]] = None
+    updatedBy: Optional[Union[str, Person]] = None
+    dateCreated: Optional[datetime] = None
+    dateUpdated: Optional[datetime] = None
+    
+    # Gene-specific fields
+    geneSymbol: Optional[SlotAnnotation] = None
+    geneFullName: Optional[SlotAnnotation] = None
+    geneSystematicName: Optional[SlotAnnotation] = None
+    geneSynonyms: Optional[List[SlotAnnotation]] = None
+    geneSecondaryIds: Optional[List[Union[str, SecondaryId]]] = None
+    geneType: Optional[Any] = None  # Can be string or object
+    
+    # Related entities
+    crossReferences: Optional[List[CrossReference]] = None
+    dataProvider: Optional[DataProvider] = None
+    taxon: Optional[Any] = None  # Can be string or object
+    
+    # Status fields
+    obsolete: Optional[bool] = None
+    internal: Optional[bool] = None
+    
+    model_config = ConfigDict(extra='allow')
+    
+    @model_validator(mode='before')
+    @classmethod
+    def handle_curie(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """Use primaryExternalId as curie if curie is missing."""
+        if 'curie' not in values and 'primaryExternalId' in values:
+            values['curie'] = values['primaryExternalId']
+        return values
+
+
+class Allele(BaseModel):
+    """Allele model that matches API response."""
+    
+    type: Optional[str] = None
+    id: Optional[int] = None
+    primaryExternalId: Optional[str] = None
+    curie: Optional[str] = None
+    
+    createdBy: Optional[Union[str, Person]] = None
+    updatedBy: Optional[Union[str, Person]] = None
+    dateCreated: Optional[datetime] = None
+    dateUpdated: Optional[datetime] = None
+    
+    alleleSymbol: Optional[SlotAnnotation] = None
+    alleleFullName: Optional[SlotAnnotation] = None
+    alleleSynonyms: Optional[List[SlotAnnotation]] = None
+    
+    crossReferences: Optional[List[CrossReference]] = None
+    dataProvider: Optional[DataProvider] = None
+    taxon: Optional[Any] = None
+    
+    obsolete: Optional[bool] = None
+    internal: Optional[bool] = None
+    isExtinct: Optional[bool] = None
+    isExtrachromosomal: Optional[bool] = None
+    isIntegrated: Optional[bool] = None
+    laboratoryOfOrigin: Optional[Any] = None
+    references: Optional[List[Any]] = None
+    
+    model_config = ConfigDict(extra='allow')
+    
+    @model_validator(mode='before')
+    @classmethod
+    def handle_curie(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """Use primaryExternalId as curie if curie is missing."""
+        if 'curie' not in values and 'primaryExternalId' in values:
+            values['curie'] = values['primaryExternalId']
+        return values
+
+
+class Species(BaseModel):
+    """Species model that matches API response."""
+    
+    type: Optional[str] = None
+    id: Optional[int] = None
+    curie: Optional[str] = None
+    
+    name: Optional[str] = None
+    displayName: Optional[str] = None
+    abbreviation: Optional[str] = None
+    commonNames: Optional[List[str]] = None
+    genomeAssembly: Optional[str] = None
+    phylogeneticOrder: Optional[int] = None
+    
+    taxon: Optional[Any] = None
+    
+    obsolete: Optional[bool] = None
+    internal: Optional[bool] = None
+    
+    model_config = ConfigDict(extra='allow')
 
 
 class OntologyTerm(BaseModel):
-    """Ontology term model from A-Team curation API."""
-
-    curie: str = Field(..., description="Compact URI")
-    name: Optional[str] = Field(None, description="Term name")
-    definition: Optional[str] = Field(None, description="Term definition")
-    definition_urls: Optional[List[str]] = Field(None, alias="definitionUrls", description="URLs with definitions")
-    synonyms: Optional[List[dict]] = Field(None, description="Term synonyms")
-    cross_references: Optional[List[dict]] = Field(None, alias="crossReferences", description="External references")
-    ancestors: Optional[List[str]] = Field(None, description="Parent terms")
-    descendants: Optional[List[str]] = Field(None, description="Child terms")
-    child_count: Optional[int] = Field(None, alias="childCount", description="Number of direct children")
-    descendant_count: Optional[int] = Field(None, alias="descendantCount", description="Total descendant count")
-    obsolete: bool = Field(False, description="Whether term is obsolete")
-    namespace: Optional[str] = Field(None, description="Ontology namespace")
-
-    class Config:
-        populate_by_name = True
+    """Ontology term model that matches API response."""
+    
+    type: Optional[str] = None
+    id: Optional[int] = None
+    curie: Optional[str] = None
+    
+    name: Optional[str] = None
+    definition: Optional[str] = None
+    namespace: Optional[str] = None
+    
+    obsolete: Optional[bool] = None
+    internal: Optional[bool] = None
+    
+    childCount: Optional[int] = None
+    descendantCount: Optional[int] = None
+    ancestors: Optional[List[str]] = None
+    
+    model_config = ConfigDict(extra='allow')
 
 
 class ExpressionAnnotation(BaseModel):
     """Expression annotation model from A-Team curation API."""
 
     curie: Optional[str] = Field(None, description="Compact URI")
-    expression_annotation_subject: Optional[dict] = Field(
+    expressionAnnotationSubject: Optional[dict] = Field(
         None,
-        alias="expressionAnnotationSubject",
         description="Expression annotation subject"
     )
-    expression_pattern: Optional[dict] = Field(
+    expressionPattern: Optional[dict] = Field(
         None,
-        alias="expressionPattern",
         description="Expression pattern"
     )
-    when_expressed_stage_name: Optional[str] = Field(
+    whenExpressedStageName: Optional[str] = Field(
         None,
-        alias="whenExpressedStageName",
         description="Human-readable stage name"
     )
-    where_expressed_statement: Optional[str] = Field(
-        None,
-        alias="whereExpressedStatement",
-        description="Anatomical expression location"
+    whereExpressedStatement: Optional[str] = Field(
+        None, 
+        description="Where expressed statement"
     )
-    single_reference: Optional[dict] = Field(
-        None,
-        alias="singleReference",
-        description="Supporting reference"
-    )
-    negated: Optional[bool] = Field(None, description="Whether expression is negated")
-    uncertain: Optional[bool] = Field(None, description="Whether expression is uncertain")
-    expression_qualifiers: Optional[List[str]] = Field(
-        None,
-        alias="expressionQualifiers",
-        description="Expression qualifiers"
-    )
-    related_notes: Optional[List[dict]] = Field(
-        None,
-        alias="relatedNotes",
-        description="Related notes"
-    )
-
-    class Config:
-        populate_by_name = True
-
-
-class Allele(AuditedObject):
-    """Allele model from A-Team curation API."""
-
-    curie: Optional[str] = Field(None, description="Compact URI")
-    primary_external_id: Optional[str] = Field(None, alias="primaryExternalId", description="Primary external ID")
     
-    # Nested objects instead of dicts
-    allele_symbol: Optional[Union[AlleleSymbolSlotAnnotation, dict]] = Field(None, alias="alleleSymbol", description="Allele symbol")
-    allele_full_name: Optional[Union[AlleleFullNameSlotAnnotation, dict]] = Field(None, alias="alleleFullName", description="Allele full name")
-    allele_synonyms: Optional[List[Union[AlleleSynonymSlotAnnotation, dict]]] = Field(None, alias="alleleSynonyms", description="Allele synonyms")
-    references: Optional[List[Union[PublicationRef, dict]]] = Field(None, description="Supporting references")
-    
-    # Laboratory and origin info
-    laboratory_of_origin: Optional[Union[Laboratory, str, dict]] = Field(None, alias="laboratoryOfOrigin", description="Originating laboratory")
-    data_provider: Optional[Union[DataProvider, dict]] = Field(None, alias="dataProvider", description="Data provider")
-    taxon: Optional[Union[NCBITaxonTerm, dict]] = Field(None, description="Taxon information")
-    
-    # Flags
-    is_extinct: Optional[bool] = Field(None, alias="isExtinct", description="Whether allele is extinct")
-    is_extrachromosomal: Optional[bool] = Field(None, alias="isExtrachromosomal", description="Whether allele is extrachromosomal")
-    is_integrated: Optional[bool] = Field(None, alias="isIntegrated", description="Whether allele is integrated")
-    obsolete: bool = Field(False, description="Whether allele is obsolete")
-    
-    # Association lists
-    gene_associations: Optional[List[Union[AlleleGeneAssociation, dict]]] = Field(None, alias="geneAssociations", description="Associated genes")
-    protein_associations: Optional[List[dict]] = Field(None, alias="proteinAssociations", description="Associated proteins")
-    transcript_associations: Optional[List[dict]] = Field(None, alias="transcriptAssociations", description="Associated transcripts")
-    variant_associations: Optional[List[dict]] = Field(None, alias="variantAssociations", description="Associated variants")
-    cell_line_associations: Optional[List[dict]] = Field(None, alias="cellLineAssociations", description="Associated cell lines")
-    image_associations: Optional[List[dict]] = Field(None, alias="imageAssociations", description="Associated images")
-    construct_associations: Optional[List[dict]] = Field(None, alias="constructAssociations", description="Associated constructs")
-
-    @field_validator('allele_symbol', 'allele_full_name', mode='before')
-    def parse_name_annotations(cls, v):
-        """Parse name slot annotations from dict if needed."""
-        if isinstance(v, dict):
-            try:
-                if 'displayText' in v or 'display_text' in v:
-                    return AlleleSymbolSlotAnnotation(**v)
-            except:
-                pass
-        return v
-    
-    @field_validator('taxon', mode='before')
-    def parse_taxon(cls, v):
-        """Parse taxon from dict if needed."""
-        if isinstance(v, dict) and 'curie' in v:
-            try:
-                return NCBITaxonTerm(**v)
-            except:
-                pass
-        return v
-    
-    @field_validator('data_provider', mode='before')
-    def parse_data_provider(cls, v):
-        """Parse data provider from dict if needed."""
-        if isinstance(v, dict) and 'sourceOrganization' in v:
-            try:
-                return DataProvider(**v)
-            except:
-                pass
-        return v
-
-    class Config:
-        populate_by_name = True
-
-
-class APIResponse(BaseModel):
-    """Standard A-Team API response wrapper."""
-
-    total_results: int = Field(..., alias="totalResults", description="Total number of results")
-    returned_records: int = Field(..., alias="returnedRecords", description="Number of records returned")
-    results: list[Any] = Field(..., description="Result data")
-
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(extra='allow')

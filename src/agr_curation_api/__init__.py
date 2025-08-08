@@ -19,6 +19,9 @@ from .models import (
     ExpressionAnnotation,
     Allele,
     APIResponse,
+    CrossReference,
+    DataProvider,
+    SlotAnnotation,
 )
 
 __version__ = "0.1.0"
@@ -36,4 +39,7 @@ __all__ = [
     "ExpressionAnnotation",
     "Allele",
     "APIResponse",
+    "CrossReference",
+    "DataProvider",
+    "SlotAnnotation",
 ]

@@ -147,7 +147,8 @@ class AGRCurationAPIClient:
         if "results" in response_data:
             for gene_data in response_data["results"]:
                 try:
-                    genes.append(Gene(**gene_data))
+                    gene = Gene(**gene_data)
+                    genes.append(gene)
                 except ValidationError as e:
                     logger.warning(f"Failed to parse gene data: {e}")
 
@@ -269,6 +270,7 @@ class AGRCurationAPIClient:
                     logger.warning(f"Failed to parse expression annotation: {e}")
 
         return annotations
+    
 
     # Allele endpoints
     def get_alleles(
