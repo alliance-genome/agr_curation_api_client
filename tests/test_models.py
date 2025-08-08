@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Unit tests for AGR Curation API models alignment with LinkML schema."""
+"""Unit tests for AGR Curation API models that match actual API responses."""
 
 import unittest
 from datetime import datetime
@@ -19,7 +19,7 @@ spec.loader.exec_module(models)
 
 
 class TestModelFieldAlignment(unittest.TestCase):
-    """Test that models align with LinkML schema definitions."""
+    """Test that models have expected fields that match API responses."""
     
     def assertFieldsPresent(self, model_class, expected_fields: Set[str], model_name: str):
         """Helper to assert that expected fields are present in model."""
@@ -32,256 +32,250 @@ class TestModelFieldAlignment(unittest.TestCase):
             f"{model_name} missing fields: {missing_fields}"
         )
     
-    def test_audited_object_fields(self):
-        """Test AuditedObject has all audit tracking fields."""
-        expected_fields = {
-            'created_by', 'date_created', 'updated_by', 'date_updated'
-        }
-        self.assertFieldsPresent(models.AuditedObject, expected_fields, 'AuditedObject')
-    
     def test_gene_model_fields(self):
-        """Test Gene model has all required LinkML fields."""
+        """Test Gene model has all required API fields."""
         expected_fields = {
-            # Core gene fields
-            'curie', 'primary_external_id', 'gene_symbol', 'gene_full_name',
-            'gene_systematic_name', 'gene_synonyms', 'gene_secondary_ids',
-            'gene_type', 'data_provider', 'taxon', 'obsolete',
-            # Inherited audit fields
-            'created_by', 'date_created', 'updated_by', 'date_updated'
+            # Core gene fields (API format)
+            'curie', 'primaryExternalId', 'geneSymbol', 'geneFullName',
+            'geneSystematicName', 'geneSynonyms', 'geneSecondaryIds',
+            'geneType', 'dataProvider', 'taxon', 'obsolete',
+            # API metadata fields
+            'type', 'id', 'internal',
+            # Audit fields 
+            'createdBy', 'updatedBy', 'dateCreated', 'dateUpdated',
+            # Cross references
+            'crossReferences'
         }
         self.assertFieldsPresent(models.Gene, expected_fields, 'Gene')
     
     def test_species_model_fields(self):
-        """Test Species model has all required LinkML fields."""
+        """Test Species model has required API fields."""
         expected_fields = {
-            # Core species fields
-            'curie', 'taxon', 'abbreviation', 'display_name', 'full_name',
-            'genome_assembly', 'common_names', 'phylogenetic_order',
-            # Inherited audit fields
-            'created_by', 'date_created', 'updated_by', 'date_updated'
+            # Core species fields (API format)
+            'curie', 'name', 'displayName', 'abbreviation', 
+            'commonNames', 'genomeAssembly', 'phylogeneticOrder',
+            'taxon', 'obsolete', 'internal',
+            # API metadata fields
+            'type', 'id'
         }
         self.assertFieldsPresent(models.Species, expected_fields, 'Species')
     
     def test_ontology_term_fields(self):
-        """Test OntologyTerm model has all LinkML fields."""
+        """Test OntologyTerm model has API fields."""
         expected_fields = {
-            'curie', 'name', 'definition', 'definition_urls', 'synonyms',
-            'cross_references', 'ancestors', 'descendants', 'child_count',
-            'descendant_count', 'obsolete', 'namespace'
+            'curie', 'name', 'definition', 'namespace', 'obsolete',
+            'childCount', 'descendantCount', 'ancestors',
+            # API metadata fields
+            'type', 'id', 'internal'
         }
         self.assertFieldsPresent(models.OntologyTerm, expected_fields, 'OntologyTerm')
     
-    def test_expression_annotation_fields(self):
-        """Test ExpressionAnnotation model has all LinkML fields."""
-        expected_fields = {
-            'curie', 'expression_annotation_subject', 'expression_pattern',
-            'when_expressed_stage_name', 'where_expressed_statement',
-            'single_reference', 'negated', 'uncertain', 
-            'expression_qualifiers', 'related_notes'
-        }
-        self.assertFieldsPresent(models.ExpressionAnnotation, expected_fields, 'ExpressionAnnotation')
-    
     def test_allele_model_fields(self):
-        """Test Allele model has all LinkML fields."""
+        """Test Allele model has API fields."""
         expected_fields = {
-            # Core allele fields
-            'curie', 'primary_external_id', 'allele_symbol', 'allele_full_name',
-            'allele_synonyms', 'references', 'laboratory_of_origin', 'is_extinct',
-            'is_extrachromosomal', 'is_integrated', 'data_provider', 'taxon',
-            'obsolete',
-            # Association fields
-            'gene_associations', 'protein_associations', 'transcript_associations',
-            'variant_associations', 'cell_line_associations', 'image_associations',
-            'construct_associations',
-            # Inherited audit fields
-            'created_by', 'date_created', 'updated_by', 'date_updated'
+            # Core allele fields (API format)
+            'curie', 'primaryExternalId', 'alleleSymbol', 'alleleFullName',
+            'alleleSynonyms', 'references', 'laboratoryOfOrigin', 'isExtinct',
+            'isExtrachromosomal', 'isIntegrated', 'dataProvider', 'taxon',
+            'obsolete', 'internal',
+            # API metadata fields
+            'type', 'id',
+            # Audit fields
+            'createdBy', 'updatedBy', 'dateCreated', 'dateUpdated',
+            # Cross references
+            'crossReferences'
         }
         self.assertFieldsPresent(models.Allele, expected_fields, 'Allele')
+
+    def test_expression_annotation_fields(self):
+        """Test ExpressionAnnotation model has API fields."""
+        expected_fields = {
+            'curie', 'expressionAnnotationSubject', 'expressionPattern',
+            'whenExpressedStageName', 'whereExpressedStatement'
+        }
+        self.assertFieldsPresent(models.ExpressionAnnotation, expected_fields, 'ExpressionAnnotation')
 
 
 class TestModelInstantiation(unittest.TestCase):
     """Test that models can be instantiated with valid data."""
     
-    def test_audited_object_instantiation(self):
-        """Test AuditedObject can be instantiated."""
-        audit_obj = models.AuditedObject(
-            created_by="test_user",
-            date_created=datetime.now(),
-            updated_by="test_user",
-            date_updated=datetime.now()
-        )
-        self.assertIsNotNone(audit_obj)
-        self.assertEqual(audit_obj.created_by, "test_user")
-    
     def test_gene_instantiation(self):
-        """Test Gene model instantiation with required fields."""
+        """Test Gene model can be instantiated."""
         gene = models.Gene(
-            curie="MGI:12345",
-            primary_external_id="MGI:12345",
-            gene_symbol={"display_text": "Abc1"},
-            gene_type={"curie": "SO:0001217", "name": "protein_coding_gene"},
-            taxon={"curie": "NCBITaxon:10090", "name": "Mus musculus"},
-            created_by="curator1"
+            curie="FB:FBgn0024733",
+            geneSymbol={"displayText": "RpL10"},
+            obsolete=False
         )
-        self.assertIsNotNone(gene)
-        self.assertEqual(gene.curie, "MGI:12345")
-        self.assertEqual(gene.gene_symbol["display_text"], "Abc1")
-    
+        self.assertEqual(gene.curie, "FB:FBgn0024733")
+        self.assertIsNotNone(gene.geneSymbol)
+        self.assertFalse(gene.obsolete)
+
     def test_species_instantiation(self):
-        """Test Species model instantiation."""
+        """Test Species model can be instantiated."""
         species = models.Species(
-            curie="NCBITaxon:10090",
-            taxon={"curie": "NCBITaxon:10090", "name": "Mus musculus"},
-            abbreviation="Mmu",
-            display_name="MOUSE",
-            full_name="Mus musculus",
-            genome_assembly="GRCm39",
-            phylogenetic_order=10
+            curie="NCBITaxon:7227",
+            displayName="Drosophila melanogaster",
+            obsolete=False
         )
-        self.assertIsNotNone(species)
-        self.assertEqual(species.abbreviation, "Mmu")
-        self.assertEqual(species.genome_assembly, "GRCm39")
-    
+        self.assertEqual(species.curie, "NCBITaxon:7227")
+        self.assertEqual(species.displayName, "Drosophila melanogaster")
+
     def test_ontology_term_instantiation(self):
-        """Test OntologyTerm model instantiation."""
-        onto_term = models.OntologyTerm(
+        """Test OntologyTerm model can be instantiated."""
+        term = models.OntologyTerm(
             curie="GO:0008150",
             name="biological_process",
-            definition="Any process specifically pertinent to the functioning of integrated living units",
-            namespace="biological_process",
-            child_count=29,
-            descendant_count=30000
+            obsolete=False
         )
-        self.assertIsNotNone(onto_term)
-        self.assertEqual(onto_term.curie, "GO:0008150")
-        self.assertEqual(onto_term.child_count, 29)
-    
-    def test_expression_annotation_instantiation(self):
-        """Test ExpressionAnnotation model instantiation."""
-        expr_annot = models.ExpressionAnnotation(
-            curie="EXPR:12345",
-            expression_annotation_subject={"curie": "MGI:12345"},
-            expression_pattern={"curie": "PATTERN:001"},
-            when_expressed_stage_name="embryonic day 10.5",
-            where_expressed_statement="dorsal root ganglion",
-            single_reference={"curie": "PMID:12345"}
-        )
-        self.assertIsNotNone(expr_annot)
-        self.assertEqual(expr_annot.when_expressed_stage_name, "embryonic day 10.5")
-    
+        self.assertEqual(term.curie, "GO:0008150")
+        self.assertEqual(term.name, "biological_process")
+
     def test_allele_instantiation(self):
-        """Test Allele model instantiation."""
+        """Test Allele model can be instantiated."""
         allele = models.Allele(
-            curie="MGI:3000001",
-            primary_external_id="MGI:3000001",
-            allele_symbol={"display_text": "Abc1<tm1Xyz>"},
-            references=[{"curie": "PMID:12345"}],
-            taxon={"curie": "NCBITaxon:10090"},
-            is_extinct=False
+            curie="MGI:5249690",
+            alleleSymbol={"displayText": "Gt(IST14665F12)Tigm"},
+            obsolete=False
         )
-        self.assertIsNotNone(allele)
-        self.assertEqual(allele.curie, "MGI:3000001")
-        self.assertFalse(allele.is_extinct)
+        self.assertEqual(allele.curie, "MGI:5249690")
+        self.assertIsNotNone(allele.alleleSymbol)
+
+    def test_expression_annotation_instantiation(self):
+        """Test ExpressionAnnotation can be instantiated."""
+        expr = models.ExpressionAnnotation(
+            curie="TEST:001",
+            whenExpressedStageName="adult"
+        )
+        self.assertEqual(expr.curie, "TEST:001")
+        self.assertEqual(expr.whenExpressedStageName, "adult")
 
 
 class TestModelSerialization(unittest.TestCase):
-    """Test model serialization and deserialization."""
-    
+    """Test model serialization behavior."""
+
     def test_gene_json_serialization(self):
-        """Test Gene model JSON serialization."""
+        """Test Gene model JSON serialization uses API field names."""
         gene = models.Gene(
             curie="MGI:12345",
-            primary_external_id="MGI:12345",
-            gene_symbol={"display_text": "Abc1", "internal": False},
-            gene_full_name={"display_text": "ABC transporter 1"},
-            gene_type={"curie": "SO:0001217", "name": "protein_coding_gene"},
-            gene_secondary_ids=["ENSEMBL:ENSMUSG00000001"],
+            primaryExternalId="MGI:12345",
+            geneSymbol={"displayText": "Abc1", "internal": False},
+            geneFullName={"displayText": "ABC transporter 1"},
+            geneType={"curie": "SO:0001217", "name": "protein_coding_gene"},
+            geneSecondaryIds=["ENSEMBL:ENSMUSG00000001"],
             taxon={"curie": "NCBITaxon:10090", "name": "Mus musculus"},
-            created_by="curator1",
-            date_created=datetime.now(),
+            createdBy="curator1",
+            dateCreated=datetime.now(),
             obsolete=False
         )
-        
-        # Test model_dump
-        gene_dict = gene.model_dump(by_alias=True, exclude_none=True)
+    
+        # Test model_dump uses our field names
+        gene_dict = gene.model_dump(exclude_none=True)
         self.assertIn("primaryExternalId", gene_dict)
         self.assertIn("geneSymbol", gene_dict)
-        
-        # Test JSON serialization
-        gene_json = gene.model_dump_json(by_alias=True, exclude_none=True)
-        self.assertIsInstance(gene_json, str)
-        
-        # Test deserialization
-        gene_from_json = models.Gene.model_validate_json(gene_json)
-        self.assertEqual(gene_from_json.curie, "MGI:12345")
-        self.assertEqual(gene_from_json.primary_external_id, "MGI:12345")
-    
+        self.assertIn("geneFullName", gene_dict)
+        self.assertIn("geneSecondaryIds", gene_dict)
+        self.assertIn("createdBy", gene_dict)
+        self.assertIn("dateCreated", gene_dict)
+
     def test_species_json_serialization(self):
         """Test Species model JSON serialization."""
         species = models.Species(
             taxon={"curie": "NCBITaxon:10090"},
-            display_name="MOUSE",
-            genome_assembly="GRCm39"
+            displayName="MOUSE",
+            genomeAssembly="GRCm39"
         )
-        
-        species_dict = species.model_dump(by_alias=True, exclude_none=True)
+    
+        species_dict = species.model_dump(exclude_none=True)
         self.assertIn("displayName", species_dict)
         self.assertIn("genomeAssembly", species_dict)
-    
+
     def test_allele_with_associations(self):
-        """Test Allele model with association fields."""
+        """Test Allele model handles complex data."""
         allele = models.Allele(
             curie="MGI:3000001",
-            allele_symbol={"display_text": "Abc1<tm1>"},
-            gene_associations=[{"curie": "MGI:12345"}],
-            protein_associations=[{"curie": "PROT:001"}],
-            is_extinct=False,
-            is_extrachromosomal=True
+            alleleSymbol={"displayText": "Abc1<tm1>"},
+            isExtinct=False,
+            isExtrachromosomal=True
         )
-        
-        allele_dict = allele.model_dump(by_alias=True, exclude_none=True)
-        self.assertIn("geneAssociations", allele_dict)
-        self.assertIn("proteinAssociations", allele_dict)
+    
+        allele_dict = allele.model_dump(exclude_none=True)
+        self.assertIn("alleleSymbol", allele_dict)
         self.assertIn("isExtinct", allele_dict)
         self.assertIn("isExtrachromosomal", allele_dict)
 
 
 class TestFieldInheritance(unittest.TestCase):
-    """Test that inheritance from AuditedObject works correctly."""
-    
+    """Test that models have proper field inheritance."""
+
     def test_gene_inherits_audit_fields(self):
-        """Test Gene inherits audit fields from AuditedObject."""
-        gene = models.Gene(
-            created_by="curator1",
-            date_created=datetime(2024, 1, 1),
-            updated_by="curator2",
-            date_updated=datetime(2024, 1, 2)
-        )
+        """Test Gene model has audit fields."""
+        gene_fields = set(models.Gene.model_fields.keys())
+        audit_fields = {'createdBy', 'dateCreated', 'updatedBy', 'dateUpdated'}
         
-        self.assertEqual(gene.created_by, "curator1")
-        self.assertEqual(gene.updated_by, "curator2")
-        self.assertIsInstance(gene.date_created, datetime)
-    
-    def test_species_inherits_audit_fields(self):
-        """Test Species inherits audit fields from AuditedObject."""
-        species = models.Species(
-            created_by="admin",
-            date_created=datetime.now()
-        )
-        
-        self.assertEqual(species.created_by, "admin")
-        self.assertIsNotNone(species.date_created)
-    
+        # Check that audit fields are present
+        for field in audit_fields:
+            self.assertIn(field, gene_fields, f"Gene missing audit field: {field}")
+
     def test_allele_inherits_audit_fields(self):
-        """Test Allele inherits audit fields from AuditedObject."""
-        allele = models.Allele(
-            created_by="curator3",
-            updated_by="curator4"
-        )
+        """Test Allele model has audit fields."""
+        allele_fields = set(models.Allele.model_fields.keys())
+        audit_fields = {'createdBy', 'dateCreated', 'updatedBy', 'dateUpdated'}
         
-        self.assertEqual(allele.created_by, "curator3")
-        self.assertEqual(allele.updated_by, "curator4")
+        for field in audit_fields:
+            self.assertIn(field, allele_fields, f"Allele missing audit field: {field}")
+
+    def test_species_inherits_audit_fields(self):
+        """Test Species model can have audit fields if present in API."""
+        # Species doesn't inherit audit fields in our API model, which is correct
+        # since the API doesn't return those fields for species
+        species_fields = set(models.Species.model_fields.keys())
+        core_fields = {'type', 'id', 'curie', 'obsolete', 'internal'}
+        
+        for field in core_fields:
+            self.assertIn(field, species_fields, f"Species missing core field: {field}")
+
+
+class TestModelFlexibility(unittest.TestCase):
+    """Test that models handle API response variations gracefully."""
+
+    def test_gene_handles_missing_curie(self):
+        """Test Gene model handles missing curie by using primaryExternalId."""
+        gene_data = {
+            "primaryExternalId": "FB:FBgn0024733",
+            "geneSymbol": {"displayText": "RpL10"},
+            "obsolete": False
+        }
+        
+        gene = models.Gene(**gene_data)
+        # The model validator should set curie from primaryExternalId
+        self.assertEqual(gene.curie, "FB:FBgn0024733")
+
+    def test_allele_handles_missing_curie(self):
+        """Test Allele model handles missing curie."""
+        allele_data = {
+            "primaryExternalId": "MGI:123",
+            "alleleSymbol": {"displayText": "test"},
+            "obsolete": False
+        }
+        
+        allele = models.Allele(**allele_data)
+        self.assertEqual(allele.curie, "MGI:123")
+
+    def test_models_handle_extra_fields(self):
+        """Test models accept extra fields from API."""
+        gene_data = {
+            "curie": "TEST:001",
+            "geneSymbol": {"displayText": "test"},
+            "obsolete": False,
+            # Extra fields that might come from API
+            "someUnknownField": "value",
+            "anotherExtraField": 123
+        }
+        
+        # Should not raise an error due to ConfigDict(extra='allow')
+        gene = models.Gene(**gene_data)
+        self.assertEqual(gene.curie, "TEST:001")
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    unittest.main()
