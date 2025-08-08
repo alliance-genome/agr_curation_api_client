@@ -6,7 +6,7 @@ converting from generic dictionaries to strongly-typed Pydantic models.
 """
 
 from datetime import datetime
-from typing import Optional, List, Any
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -20,7 +20,7 @@ class SlotAnnotation(BaseModel):
     date_created: Optional[datetime] = Field(None, alias="dateCreated")
     updated_by: Optional[str] = Field(None, alias="updatedBy")
     date_updated: Optional[datetime] = Field(None, alias="dateUpdated")
-    
+
     class Config:
         populate_by_name = True
 
@@ -32,7 +32,7 @@ class NameSlotAnnotation(SlotAnnotation):
     name_type: Optional[str] = Field(None, alias="nameType", description="Type of name")
     synonym_scope: Optional[str] = Field(None, alias="synonymScope")
     synonym_url: Optional[str] = Field(None, alias="synonymUrl")
-    
+
     class Config:
         populate_by_name = True
 
@@ -46,7 +46,7 @@ class NCBITaxonTerm(BaseModel):
     abbreviation: Optional[str] = Field(None)
     internal: Optional[bool] = Field(False)
     obsolete: Optional[bool] = Field(False)
-    
+
     class Config:
         populate_by_name = True
 
@@ -59,7 +59,7 @@ class SOTerm(BaseModel):
     definition: Optional[str] = Field(None)
     namespace: Optional[str] = Field(None)
     obsolete: Optional[bool] = Field(False)
-    
+
     class Config:
         populate_by_name = True
 
@@ -71,7 +71,7 @@ class GOTerm(BaseModel):
     definition: Optional[str] = Field(None)
     namespace: Optional[str] = Field(None)
     obsolete: Optional[bool] = Field(False)
-    
+
     class Config:
         populate_by_name = True
 
@@ -83,7 +83,7 @@ class VocabularyTerm(BaseModel):
     definition: Optional[str] = Field(None)
     namespace: Optional[str] = Field(None)
     obsolete: Optional[bool] = Field(False)
-    
+
     class Config:
         populate_by_name = True
 
@@ -98,7 +98,7 @@ class CrossReference(BaseModel):
     url: Optional[str] = Field(None)
     internal: Optional[bool] = Field(False)
     obsolete: Optional[bool] = Field(False)
-    
+
     class Config:
         populate_by_name = True
 
@@ -107,7 +107,7 @@ class DataProvider(BaseModel):
     """Data provider information."""
     source_organization: str = Field(..., alias="sourceOrganization", description="Organization abbreviation (e.g., WB, MGI)")
     cross_reference: Optional[CrossReference] = Field(None, alias="crossReference")
-    
+
     class Config:
         populate_by_name = True
 
@@ -117,7 +117,7 @@ class PublicationRef(BaseModel):
     """Reference to a publication."""
     curie: Optional[str] = Field(None, description="Reference ID")
     cross_references: Optional[List[CrossReference]] = Field(None, alias="crossReferences")
-    
+
     class Config:
         populate_by_name = True
 
@@ -146,7 +146,7 @@ class GeneSynonymSlotAnnotation(NameSlotAnnotation):
 class GeneSecondaryIdSlotAnnotation(SlotAnnotation):
     """Gene secondary ID annotation."""
     secondary_id: str = Field(..., alias="secondaryId")
-    
+
     class Config:
         populate_by_name = True
 
@@ -174,7 +174,7 @@ class Laboratory(BaseModel):
     name: Optional[str] = Field(None, description="Full lab name")
     pi_name: Optional[str] = Field(None, alias="piName", description="Principal investigator")
     institution: Optional[str] = Field(None)
-    
+
     class Config:
         populate_by_name = True
 
@@ -186,7 +186,7 @@ class Person(BaseModel):
     last_name: Optional[str] = Field(None, alias="lastName")
     email: Optional[str] = Field(None)
     orcid: Optional[str] = Field(None)
-    
+
     class Config:
         populate_by_name = True
 
@@ -202,7 +202,7 @@ class GeneGenomicLocationAssociation(BaseModel):
     chromosome: Optional[str] = Field(None)
     assembly: Optional[str] = Field(None)
     evidence: Optional[List[PublicationRef]] = Field(None)
-    
+
     class Config:
         populate_by_name = True
 
@@ -213,7 +213,7 @@ class AlleleGeneAssociation(BaseModel):
     allele_gene_association_object: Optional[str] = Field(None, alias="alleleGeneAssociationObject")
     relation: Optional[str] = Field(None, description="Relationship type")
     evidence: Optional[List[PublicationRef]] = Field(None)
-    
+
     class Config:
         populate_by_name = True
 
@@ -225,6 +225,6 @@ class Note(BaseModel):
     free_text: str = Field(..., alias="freeText", description="Note content")
     evidence: Optional[List[PublicationRef]] = Field(None)
     internal: Optional[bool] = Field(False)
-    
+
     class Config:
         populate_by_name = True

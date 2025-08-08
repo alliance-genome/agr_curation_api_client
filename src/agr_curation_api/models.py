@@ -60,30 +60,30 @@ class APIResponse(BaseModel):
 
 class Person(BaseModel):
     """Person model for createdBy/updatedBy fields."""
-    
+
     id: Optional[int] = None
     uniqueId: Optional[str] = None
     dateCreated: Optional[datetime] = None
     dateUpdated: Optional[datetime] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class ResourceDescriptorPage(BaseModel):
     """Resource descriptor page model."""
-    
+
     id: Optional[int] = None
     internal: Optional[bool] = None
     obsolete: Optional[bool] = None
     name: Optional[str] = None
     url: Optional[str] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class CrossReference(BaseModel):
     """Cross reference model that matches API response."""
-    
+
     id: Optional[int] = None
     createdBy: Optional[Union[str, Person]] = None
     updatedBy: Optional[Union[str, Person]] = None
@@ -92,20 +92,20 @@ class CrossReference(BaseModel):
     dbDateCreated: Optional[datetime] = None
     dbDateUpdated: Optional[datetime] = None
     resourceDescriptorPage: Optional[ResourceDescriptorPage] = None
-    
+
     # Original CrossReference fields
     displayName: Optional[str] = None
     pageArea: Optional[str] = None
     prefix: Optional[str] = None
     referencedCurie: Optional[str] = None
     url: Optional[str] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class DataProvider(BaseModel):
     """Data provider model that matches API response."""
-    
+
     type: Optional[str] = None
     id: Optional[int] = None
     internal: Optional[bool] = None
@@ -115,9 +115,9 @@ class DataProvider(BaseModel):
     homepageResourceDescriptorPage: Optional[ResourceDescriptorPage] = None
     sourceOrganization: Optional[str] = None
     crossReference: Optional[CrossReference] = None
-    
+
     model_config = ConfigDict(extra='allow')
-    
+
     @model_validator(mode='before')
     @classmethod
     def extract_source_organization(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -129,72 +129,72 @@ class DataProvider(BaseModel):
 
 class NameType(BaseModel):
     """Name type model."""
-    
+
     id: Optional[int] = None
     internal: Optional[bool] = None
     obsolete: Optional[bool] = None
     name: Optional[str] = None
     definition: Optional[str] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class SynonymScope(BaseModel):
     """Synonym scope model."""
-    
+
     id: Optional[int] = None
     internal: Optional[bool] = None
     obsolete: Optional[bool] = None
     name: Optional[str] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class SlotAnnotation(BaseModel):
     """Slot annotation model that matches API response."""
-    
+
     id: Optional[int] = None
     createdBy: Optional[Union[str, Person]] = None
     updatedBy: Optional[Union[str, Person]] = None
     dbDateCreated: Optional[datetime] = None
     dbDateUpdated: Optional[datetime] = None
-    
+
     displayText: Optional[str] = None
     formatText: Optional[str] = None
     nameType: Optional[Union[str, NameType]] = None
     synonymScope: Optional[Union[str, SynonymScope]] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class SecondaryId(BaseModel):
     """Secondary ID model."""
-    
+
     id: Optional[int] = None
     createdBy: Optional[Union[str, Person]] = None
     updatedBy: Optional[Union[str, Person]] = None
     dbDateCreated: Optional[datetime] = None
     dbDateUpdated: Optional[datetime] = None
     secondaryId: Optional[str] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class Gene(BaseModel):
     """Gene model that matches the actual API response structure."""
-    
+
     # Primary fields that may differ from schema
     type: Optional[str] = None
     id: Optional[int] = None
     primaryExternalId: Optional[str] = None  # This is often used instead of curie
     curie: Optional[str] = None  # May be missing, use primaryExternalId as fallback
-    
+
     # Audit fields that can be objects or strings
     createdBy: Optional[Union[str, Person]] = None
     updatedBy: Optional[Union[str, Person]] = None
     dateCreated: Optional[datetime] = None
     dateUpdated: Optional[datetime] = None
-    
+
     # Gene-specific fields
     geneSymbol: Optional[SlotAnnotation] = None
     geneFullName: Optional[SlotAnnotation] = None
@@ -202,18 +202,18 @@ class Gene(BaseModel):
     geneSynonyms: Optional[List[SlotAnnotation]] = None
     geneSecondaryIds: Optional[List[Union[str, SecondaryId]]] = None
     geneType: Optional[Any] = None  # Can be string or object
-    
+
     # Related entities
     crossReferences: Optional[List[CrossReference]] = None
     dataProvider: Optional[DataProvider] = None
     taxon: Optional[Any] = None  # Can be string or object
-    
+
     # Status fields
     obsolete: Optional[bool] = None
     internal: Optional[bool] = None
-    
+
     model_config = ConfigDict(extra='allow')
-    
+
     @model_validator(mode='before')
     @classmethod
     def handle_curie(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -225,25 +225,25 @@ class Gene(BaseModel):
 
 class Allele(BaseModel):
     """Allele model that matches API response."""
-    
+
     type: Optional[str] = None
     id: Optional[int] = None
     primaryExternalId: Optional[str] = None
     curie: Optional[str] = None
-    
+
     createdBy: Optional[Union[str, Person]] = None
     updatedBy: Optional[Union[str, Person]] = None
     dateCreated: Optional[datetime] = None
     dateUpdated: Optional[datetime] = None
-    
+
     alleleSymbol: Optional[SlotAnnotation] = None
     alleleFullName: Optional[SlotAnnotation] = None
     alleleSynonyms: Optional[List[SlotAnnotation]] = None
-    
+
     crossReferences: Optional[List[CrossReference]] = None
     dataProvider: Optional[DataProvider] = None
     taxon: Optional[Any] = None
-    
+
     obsolete: Optional[bool] = None
     internal: Optional[bool] = None
     isExtinct: Optional[bool] = None
@@ -251,9 +251,9 @@ class Allele(BaseModel):
     isIntegrated: Optional[bool] = None
     laboratoryOfOrigin: Optional[Any] = None
     references: Optional[List[Any]] = None
-    
+
     model_config = ConfigDict(extra='allow')
-    
+
     @model_validator(mode='before')
     @classmethod
     def handle_curie(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -265,44 +265,44 @@ class Allele(BaseModel):
 
 class Species(BaseModel):
     """Species model that matches API response."""
-    
+
     type: Optional[str] = None
     id: Optional[int] = None
     curie: Optional[str] = None
-    
+
     name: Optional[str] = None
     displayName: Optional[str] = None
     abbreviation: Optional[str] = None
     commonNames: Optional[List[str]] = None
     genomeAssembly: Optional[str] = None
     phylogeneticOrder: Optional[int] = None
-    
+
     taxon: Optional[Any] = None
-    
+
     obsolete: Optional[bool] = None
     internal: Optional[bool] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
 class OntologyTerm(BaseModel):
     """Ontology term model that matches API response."""
-    
+
     type: Optional[str] = None
     id: Optional[int] = None
     curie: Optional[str] = None
-    
+
     name: Optional[str] = None
     definition: Optional[str] = None
     namespace: Optional[str] = None
-    
+
     obsolete: Optional[bool] = None
     internal: Optional[bool] = None
-    
+
     childCount: Optional[int] = None
     descendantCount: Optional[int] = None
     ancestors: Optional[List[str]] = None
-    
+
     model_config = ConfigDict(extra='allow')
 
 
@@ -323,8 +323,8 @@ class ExpressionAnnotation(BaseModel):
         description="Human-readable stage name"
     )
     whereExpressedStatement: Optional[str] = Field(
-        None, 
+        None,
         description="Where expressed statement"
     )
-    
+
     model_config = ConfigDict(extra='allow')

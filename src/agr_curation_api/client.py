@@ -270,7 +270,6 @@ class AGRCurationAPIClient:
                     logger.warning(f"Failed to parse expression annotation: {e}")
 
         return annotations
-    
 
     # Allele endpoints
     def get_alleles(
