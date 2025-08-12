@@ -22,6 +22,7 @@ from .models import (
     CrossReference,
     DataProvider,
     SlotAnnotation,
+    AffectedGenomicModel,
 )
 
 __version__ = "0.1.0"
@@ -42,4 +43,5 @@ __all__ = [
     "CrossReference",
     "DataProvider",
     "SlotAnnotation",
+    "AffectedGenomicModel",
 ]

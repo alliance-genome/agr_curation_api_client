@@ -137,3 +137,6 @@ Thumbs.db
 *.token
 okta_token
 tmp/
+
+# Documentation
+CLAUDE.md

@@ -7,7 +7,16 @@ import sys
 
 from pydantic import ValidationError
 
-from agr_curation_api import AGRCurationAPIClient, APIConfig, Gene, Species, OntologyTerm, Allele, AGRAPIError
+from agr_curation_api import (
+    AGRCurationAPIClient,
+    APIConfig,
+    Gene,
+    Species,
+    OntologyTerm,
+    Allele,
+    AffectedGenomicModel,
+    AGRAPIError
+)
 
 LIMIT = 10
 
@@ -323,6 +332,132 @@ def fetch_alleles(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = 
         return False
 
 
+
+def display_agm(agm: AffectedGenomicModel, verbose: bool = False):
+    """Display AGM (Affected Genomic Model) information."""
+    # Try to find a meaningful name/identifier
+    display_name = agm.name or agm.curie or agm.uniqueId or agm.modEntityId or 'N/A'
+    
+    print(f"\n{'='*60}")
+    print(f"AGM: {display_name}")
+    print(f"{'='*60}")
+    
+    if agm.curie:
+        print(f"CURIE: {agm.curie}")
+    
+    if agm.uniqueId:
+        print(f"Unique ID: {agm.uniqueId}")
+    
+    if agm.subtype:
+        # Handle subtype which can be a string or dictionary
+        if isinstance(agm.subtype, dict):
+            subtype_name = agm.subtype.get('name', str(agm.subtype))
+        else:
+            subtype_name = str(agm.subtype)
+        print(f"Subtype: {subtype_name}")
+    
+    if agm.species:
+        if isinstance(agm.species, str):
+            print(f"Species: {agm.species}")
+        elif hasattr(agm.species, 'displayName'):
+            print(f"Species: {agm.species.displayName or agm.species.name}")
+        elif isinstance(agm.species, dict):
+            species_name = agm.species.get('displayName', agm.species.get('name', 'N/A'))
+            print(f"Species: {species_name}")
+    
+    if agm.dataProvider:
+        provider_name = agm.dataProvider.abbreviation if hasattr(agm.dataProvider, 'abbreviation') else str(agm.dataProvider)
+        print(f"Data Provider: {provider_name}")
+    
+    if agm.alleles and len(agm.alleles) > 0:
+        print(f"Number of Alleles: {len(agm.alleles)}")
+    
+    print(f"Obsolete: {agm.obsolete}")
+    
+    if verbose:
+        print("\nAdditional Details:")
+        if agm.modEntityId:
+            print(f"  MOD Entity ID: {agm.modEntityId}")
+        if agm.modInternalId:
+            print(f"  MOD Internal ID: {agm.modInternalId}")
+        if agm.affectedGenomicModelComponents:
+            print(f"  Components: {len(agm.affectedGenomicModelComponents)} component(s)")
+        if agm.parentalPopulations:
+            print(f"  Parental Populations: {len(agm.parentalPopulations)}")
+        if agm.sequenceTargetingReagents:
+            print(f"  Sequence Targeting Reagents: {len(agm.sequenceTargetingReagents)}")
+        if agm.dateCreated:
+            print(f"  Date Created: {agm.dateCreated}")
+
+
+def fetch_agms(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
+    """Fetch and display AGMs (Affected Genomic Models)."""
+    print("\n" + "="*70)
+    print("FETCHING AGMS (AFFECTED GENOMIC MODELS)")
+    print("="*70)
+    
+    try:
+        response = client.get_agms(limit=limit)
+        
+        if hasattr(response, 'results'):
+            agms = response.results
+        else:
+            agms = response if isinstance(response, list) else []
+        
+        print(f"\nFound {len(agms)} AGM(s)")
+        
+        for agm_data in agms[:limit]:
+            try:
+                agm = AffectedGenomicModel(**agm_data) if isinstance(agm_data, dict) else agm_data
+                display_agm(agm, verbose)
+            except ValidationError as e:
+                print(f"\nError parsing AGM data: {e}")
+                if verbose:
+                    print(f"Raw data: {json.dumps(agm_data, indent=2, default=str)}")
+        
+        return True
+    except AGRAPIError as e:
+        print(f"\nError fetching AGMs: {e}")
+        return False
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+        return False
+
+
+def fetch_fish_models(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
+    """Fetch and display zebrafish AGMs."""
+    print("\n" + "="*70)
+    print("FETCHING ZEBRAFISH MODELS (ZFIN AGMS)")
+    print("="*70)
+    
+    try:
+        response = client.get_fish_models(limit=limit)
+        
+        if hasattr(response, 'results'):
+            fish_models = response.results
+        else:
+            fish_models = response if isinstance(response, list) else []
+        
+        print(f"\nFound {len(fish_models)} zebrafish model(s)")
+        
+        for fish_data in fish_models[:limit]:
+            try:
+                fish = AffectedGenomicModel(**fish_data) if isinstance(fish_data, dict) else fish_data
+                display_agm(fish, verbose)
+            except ValidationError as e:
+                print(f"\nError parsing zebrafish model data: {e}")
+                if verbose:
+                    print(f"Raw data: {json.dumps(fish_data, indent=2, default=str)}")
+        
+        return True
+    except AGRAPIError as e:
+        print(f"\nError fetching zebrafish models: {e}")
+        return False
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+        return False
+
+
 def main():
     # Print header
     print("="*70)
@@ -355,6 +490,12 @@ def main():
     all_successful = all_successful and success
 
     success = fetch_alleles(client, limit=LIMIT, verbose=True)
+    all_successful = all_successful and success
+
+    success = fetch_agms(client, limit=LIMIT, verbose=True)
+    all_successful = all_successful and success
+
+    success = fetch_fish_models(client, limit=LIMIT, verbose=True)
     all_successful = all_successful and success
     
     # Summary

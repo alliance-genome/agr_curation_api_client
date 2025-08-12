@@ -17,6 +17,7 @@ from .models import (
     ExpressionAnnotation,
     Allele,
     APIResponse,
+    AffectedGenomicModel,
 )
 from .exceptions import (
     AGRAPIError,
@@ -319,6 +320,77 @@ class AGRCurationAPIClient:
             return Allele(**response_data)
         except AGRAPIError:
             return None
+
+    # AGM (Affected Genomic Model) endpoints
+    def get_agms(
+        self,
+        data_provider: Optional[str] = None,
+        subtype: Optional[str] = None,
+        limit: int = 5000,
+        page: int = 0
+    ) -> List[AffectedGenomicModel]:
+        """Get Affected Genomic Models (AGMs) from A-Team API.
+
+        Args:
+            data_provider: Filter by data provider abbreviation (e.g., 'ZFIN' for zebrafish)
+            subtype: Filter by AGM subtype (e.g., 'strain', 'genotype')
+            limit: Number of results per page
+            page: Page number (0-based)
+
+        Returns:
+            List of AffectedGenomicModel objects
+        """
+        req_data = {}
+        if data_provider:
+            req_data["dataProvider.abbreviation"] = data_provider
+        if subtype:
+            req_data["subtype"] = subtype
+
+        url = f"agm/find?limit={limit}&page={page}"
+        response_data = self._make_request("POST", url, req_data)
+
+        agms = []
+        if "results" in response_data:
+            for agm_data in response_data["results"]:
+                try:
+                    agms.append(AffectedGenomicModel(**agm_data))
+                except ValidationError as e:
+                    logger.warning(f"Failed to parse AGM data: {e}")
+
+        return agms
+
+    def get_agm(self, agm_id: str) -> Optional[AffectedGenomicModel]:
+        """Get a specific AGM by ID.
+
+        Args:
+            agm_id: AGM curie or primary external ID
+
+        Returns:
+            AffectedGenomicModel object or None if not found
+        """
+        try:
+            response_data = self._make_request("GET", f"agm/{agm_id}")
+            return AffectedGenomicModel(**response_data)
+        except AGRAPIError:
+            return None
+
+    def get_fish_models(
+        self,
+        limit: int = 5000,
+        page: int = 0
+    ) -> List[AffectedGenomicModel]:
+        """Get zebrafish AGMs from A-Team API.
+
+        Convenience method to get AGMs specifically for zebrafish (ZFIN).
+
+        Args:
+            limit: Number of results per page
+            page: Page number (0-based)
+
+        Returns:
+            List of AffectedGenomicModel objects for zebrafish
+        """
+        return self.get_agms(data_provider="ZFIN", limit=limit, page=page)
 
     # Search methods
     def search_entities(

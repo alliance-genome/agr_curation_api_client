@@ -328,3 +328,34 @@ class ExpressionAnnotation(BaseModel):
     )
 
     model_config = ConfigDict(extra='allow')
+
+
+
+class AffectedGenomicModel(BaseModel):
+    """Affected Genomic Model (AGM) for fish and other organisms from A-Team curation API."""
+
+    id: Optional[int] = None
+    curie: Optional[str] = Field(None, description="Compact URI")
+    uniqueId: Optional[str] = None
+    modEntityId: Optional[str] = None
+    modInternalId: Optional[str] = None
+    name: Optional[str] = None
+    dataProvider: Optional[DataProvider] = None
+    taxon: Optional[Union[str, Dict[str, Any]]] = None
+    species: Optional[Union[str, Species, Dict[str, Any]]] = None
+    subtype: Optional[Union[str, Dict[str, Any]]] = None
+    internal: Optional[bool] = None
+    obsolete: Optional[bool] = None
+    createdBy: Optional[Union[str, Person]] = None
+    updatedBy: Optional[Union[str, Person]] = None
+    dateCreated: Optional[datetime] = None
+    dateUpdated: Optional[datetime] = None
+    dbDateCreated: Optional[datetime] = None
+    dbDateUpdated: Optional[datetime] = None
+    crossReferences: Optional[List[CrossReference]] = None
+    alleles: Optional[List[Union[str, Allele, Dict[str, Any]]]] = None
+    affectedGenomicModelComponents: Optional[List[Dict[str, Any]]] = None
+    parentalPopulations: Optional[List[Dict[str, Any]]] = None
+    sequenceTargetingReagents: Optional[List[Dict[str, Any]]] = None
+
+    model_config = ConfigDict(extra='allow')
