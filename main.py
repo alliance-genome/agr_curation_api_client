@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
@@ -458,6 +459,106 @@ def fetch_fish_models(client: AGRCurationAPIClient, limit: int = 5, verbose: boo
         return False
 
 
+def fetch_recently_updated_entities(client: AGRCurationAPIClient, days_back: int = 30, 
+                                   limit: int = 5, verbose: bool = False):
+    """Fetch entities updated within the specified number of days.
+    
+    Args:
+        client: AGR API client instance
+        days_back: Number of days to look back (default: 30)
+        limit: Maximum number of results per entity type
+        verbose: Show detailed information
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print(f"FETCHING ENTITIES UPDATED IN LAST {days_back} DAYS")
+    print("="*70)
+    
+    # Calculate the date threshold (client will automatically use UTC)
+    threshold_date = datetime.now() - timedelta(days=days_back)
+    date_str = threshold_date.isoformat()
+    
+    print(f"Looking for entities updated after: {threshold_date.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    all_successful = True
+    
+    # Fetch recently updated genes
+    print(f"\n--- Recently Updated Genes ---")
+    try:
+        genes = client.get_genes(limit=limit, updated_after=date_str)
+        
+        if genes:
+            print(f"Found {len(genes)} recently updated gene(s)")
+            for gene in genes[:3]:  # Show first 3
+                if hasattr(gene, 'dbDateUpdated') and gene.dbDateUpdated:
+                    print(f"  • {gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'} "
+                          f"(Updated: {gene.dbDateUpdated})")
+                else:
+                    print(f"  • {gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'}")
+        else:
+            print("No recently updated genes found")
+    except Exception as e:
+        print(f"Error fetching genes: {e}")
+        all_successful = False
+    
+    # Fetch recently updated alleles
+    print(f"\n--- Recently Updated Alleles ---")
+    try:
+        alleles = client.get_alleles(limit=limit, updated_after=date_str)
+        
+        if alleles:
+            print(f"Found {len(alleles)} recently updated allele(s)")
+            for allele in alleles[:3]:  # Show first 3
+                if hasattr(allele, 'dbDateUpdated') and allele.dbDateUpdated:
+                    print(f"  • {allele.alleleSymbol.displayText if allele.alleleSymbol else allele.curie or 'N/A'} "
+                          f"(Updated: {allele.dbDateUpdated})")
+                else:
+                    print(f"  • {allele.alleleSymbol.displayText if allele.alleleSymbol else allele.curie or 'N/A'}")
+        else:
+            print("No recently updated alleles found")
+    except Exception as e:
+        print(f"Error fetching alleles: {e}")
+        all_successful = False
+    
+    # Fetch recently updated AGMs
+    print(f"\n--- Recently Updated AGMs ---")
+    try:
+        agms = client.get_agms(limit=limit, updated_after=date_str)
+        
+        if agms:
+            print(f"Found {len(agms)} recently updated AGM(s)")
+            for agm in agms[:3]:  # Show first 3
+                display_name = agm.name or agm.curie or agm.uniqueId or 'N/A'
+                if hasattr(agm, 'dbDateUpdated') and agm.dbDateUpdated:
+                    print(f"  • {display_name} (Updated: {agm.dbDateUpdated})")
+                else:
+                    print(f"  • {display_name}")
+        else:
+            print("No recently updated AGMs found")
+    except Exception as e:
+        print(f"Error fetching AGMs: {e}")
+        all_successful = False
+    
+    # Example with custom date
+    print(f"\n--- Custom Date Example ---")
+    custom_date = datetime(2024, 1, 1)  # January 1, 2024
+    print(f"Fetching genes updated after {custom_date.strftime('%Y-%m-%d')}...")
+    
+    try:
+        genes = client.get_genes(limit=3, updated_after=custom_date)
+        if genes:
+            print(f"Found {len(genes)} gene(s) updated since {custom_date.strftime('%Y-%m-%d')}")
+        else:
+            print(f"No genes found updated since {custom_date.strftime('%Y-%m-%d')}")
+    except Exception as e:
+        print(f"Error: {e}")
+        all_successful = False
+    
+    return all_successful
+
+
 def main():
     # Print header
     print("="*70)
@@ -496,6 +597,10 @@ def main():
     all_successful = all_successful and success
 
     success = fetch_fish_models(client, limit=LIMIT, verbose=True)
+    all_successful = all_successful and success
+    
+    # Demonstrate date filtering functionality
+    success = fetch_recently_updated_entities(client, days_back=30, limit=LIMIT, verbose=False)
     all_successful = all_successful and success
     
     # Summary

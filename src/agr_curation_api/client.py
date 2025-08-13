@@ -3,6 +3,7 @@
 import json
 import logging
 import urllib.request
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Union, Type
 from types import TracebackType
 
@@ -69,6 +70,88 @@ class AGRCurationAPIClient:
         """Context manager exit."""
         pass
 
+    def _apply_date_sorting(
+        self,
+        req_data: Dict[str, Any],
+        updated_after: Optional[Union[str, datetime]]
+    ) -> None:
+        """Apply date sorting to request data.
+        
+        Args:
+            req_data: Request data dictionary to modify
+            updated_after: Filter for entities updated after this date (used for sorting)
+        """
+        if updated_after:
+            # Add sort order to get newest first
+            req_data["sortOrders"] = [
+                {
+                    "field": "dbDateUpdated",
+                    "order": -1
+                }
+            ]
+    
+    def _filter_by_date(
+        self,
+        items: List[Any],
+        updated_after: Optional[Union[str, datetime]],
+        date_field: str = "dbDateUpdated"
+    ) -> List[Any]:
+        """Filter items by date.
+        
+        Args:
+            items: List of items to filter
+            updated_after: Filter for entities updated after this date
+            date_field: Name of the date field to check
+        
+        Returns:
+            Filtered list of items
+        """
+        if not updated_after:
+            return items
+        
+        # Convert to datetime if needed and ensure it's timezone-aware
+        if isinstance(updated_after, str):
+            # Handle ISO format with or without timezone
+            if 'Z' in updated_after or '+' in updated_after:
+                threshold = datetime.fromisoformat(updated_after.replace('Z', '+00:00'))
+            else:
+                # Assume UTC if no timezone info
+                threshold = datetime.fromisoformat(updated_after).replace(tzinfo=timezone.utc)
+        else:
+            # If datetime object, ensure it has timezone info
+            if updated_after.tzinfo is None:
+                threshold = updated_after.replace(tzinfo=timezone.utc)
+            else:
+                threshold = updated_after
+        
+        filtered = []
+        for item in items:
+            item_date = getattr(item, date_field, None)
+            if item_date:
+                # Convert string to datetime if needed
+                if isinstance(item_date, str):
+                    if 'Z' in item_date or '+' in item_date:
+                        item_datetime = datetime.fromisoformat(item_date.replace('Z', '+00:00'))
+                    else:
+                        item_datetime = datetime.fromisoformat(item_date).replace(tzinfo=timezone.utc)
+                elif isinstance(item_date, datetime):
+                    # Ensure datetime has timezone info
+                    if item_date.tzinfo is None:
+                        item_datetime = item_date.replace(tzinfo=timezone.utc)
+                    else:
+                        item_datetime = item_date
+                else:
+                    # Skip if not a string or datetime
+                    continue
+                
+                if item_datetime > threshold:
+                    filtered.append(item)
+            else:
+                # If no date field, skip the item when filtering
+                continue
+        
+        return filtered
+
     def _make_request(
         self,
         method: str,
@@ -125,7 +208,8 @@ class AGRCurationAPIClient:
         self,
         data_provider: Optional[str] = None,
         limit: int = 5000,
-        page: int = 0
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
     ) -> List[Gene]:
         """Get genes from A-Team API.
 
@@ -133,6 +217,7 @@ class AGRCurationAPIClient:
             data_provider: Filter by data provider abbreviation (e.g., 'WB', 'MGI')
             limit: Number of results per page
             page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
             List of Gene objects
@@ -140,8 +225,10 @@ class AGRCurationAPIClient:
         req_data = {}
         if data_provider:
             req_data["dataProvider.abbreviation"] = data_provider
+        
+        self._apply_date_sorting(req_data, updated_after)
 
-        url = f"gene/find?limit={limit}&page={page}"
+        url = f"gene/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
 
         genes = []
@@ -153,6 +240,9 @@ class AGRCurationAPIClient:
                 except ValidationError as e:
                     logger.warning(f"Failed to parse gene data: {e}")
 
+        # Filter by date if specified
+        genes = self._filter_by_date(genes, updated_after)
+        
         return genes
 
     def get_gene(self, gene_id: str) -> Optional[Gene]:
@@ -171,18 +261,27 @@ class AGRCurationAPIClient:
             return None
 
     # Species endpoints
-    def get_species(self, limit: int = 100, page: int = 0) -> List[Species]:
+    def get_species(
+        self,
+        limit: int = 100,
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
+    ) -> List[Species]:
         """Get species data from A-Team API.
 
         Args:
             limit: Number of results per page
             page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
             List of Species objects
         """
-        url = f"species/findForPublic?limit={limit}&page={page}&view=ForPublic"
-        response_data = self._make_request("POST", url, {})
+        req_data = {}
+        self._apply_date_sorting(req_data, updated_after)
+        
+        url = f"species/search?limit={limit}&page={page}"
+        response_data = self._make_request("POST", url, req_data)
 
         species_list = []
         if "results" in response_data:
@@ -192,6 +291,9 @@ class AGRCurationAPIClient:
                 except ValidationError as e:
                     logger.warning(f"Failed to parse species data: {e}")
 
+        # Filter by date if specified
+        species_list = self._filter_by_date(species_list, updated_after)
+        
         return species_list
 
     # Ontology endpoints
@@ -245,7 +347,8 @@ class AGRCurationAPIClient:
         self,
         data_provider: str,
         limit: int = 5000,
-        page: int = 0
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
     ) -> List[ExpressionAnnotation]:
         """Get expression annotations from A-Team API.
 
@@ -253,12 +356,15 @@ class AGRCurationAPIClient:
             data_provider: Data provider abbreviation
             limit: Number of results per page
             page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
             List of ExpressionAnnotation objects
         """
         req_data = {"expressionAnnotationSubject.dataProvider.abbreviation": data_provider}
-        url = f"gene-expression-annotation/findForPublic?limit={limit}&page={page}&view=ForPublic"
+        self._apply_date_sorting(req_data, updated_after)
+        
+        url = f"gene-expression-annotation/search?limit={limit}&page={page}"
 
         response_data = self._make_request("POST", url, req_data)
 
@@ -270,6 +376,9 @@ class AGRCurationAPIClient:
                 except ValidationError as e:
                     logger.warning(f"Failed to parse expression annotation: {e}")
 
+        # Filter by date if specified
+        annotations = self._filter_by_date(annotations, updated_after)
+        
         return annotations
 
     # Allele endpoints
@@ -277,7 +386,8 @@ class AGRCurationAPIClient:
         self,
         data_provider: Optional[str] = None,
         limit: int = 5000,
-        page: int = 0
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
     ) -> List[Allele]:
         """Get alleles from A-Team API.
 
@@ -285,6 +395,7 @@ class AGRCurationAPIClient:
             data_provider: Filter by data provider abbreviation
             limit: Number of results per page
             page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
             List of Allele objects
@@ -292,8 +403,10 @@ class AGRCurationAPIClient:
         req_data = {}
         if data_provider:
             req_data["dataProvider.abbreviation"] = data_provider
+        
+        self._apply_date_sorting(req_data, updated_after)
 
-        url = f"allele/find?limit={limit}&page={page}"
+        url = f"allele/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
 
         alleles = []
@@ -304,6 +417,9 @@ class AGRCurationAPIClient:
                 except ValidationError as e:
                     logger.warning(f"Failed to parse allele data: {e}")
 
+        # Filter by date if specified
+        alleles = self._filter_by_date(alleles, updated_after)
+        
         return alleles
 
     def get_allele(self, allele_id: str) -> Optional[Allele]:
@@ -327,7 +443,8 @@ class AGRCurationAPIClient:
         data_provider: Optional[str] = None,
         subtype: Optional[str] = None,
         limit: int = 5000,
-        page: int = 0
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
     ) -> List[AffectedGenomicModel]:
         """Get Affected Genomic Models (AGMs) from A-Team API.
 
@@ -336,6 +453,7 @@ class AGRCurationAPIClient:
             subtype: Filter by AGM subtype (e.g., 'strain', 'genotype')
             limit: Number of results per page
             page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
             List of AffectedGenomicModel objects
@@ -345,8 +463,10 @@ class AGRCurationAPIClient:
             req_data["dataProvider.abbreviation"] = data_provider
         if subtype:
             req_data["subtype"] = subtype
+        
+        self._apply_date_sorting(req_data, updated_after)
 
-        url = f"agm/find?limit={limit}&page={page}"
+        url = f"agm/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
 
         agms = []
@@ -357,6 +477,9 @@ class AGRCurationAPIClient:
                 except ValidationError as e:
                     logger.warning(f"Failed to parse AGM data: {e}")
 
+        # Filter by date if specified
+        agms = self._filter_by_date(agms, updated_after)
+        
         return agms
 
     def get_agm(self, agm_id: str) -> Optional[AffectedGenomicModel]:
@@ -377,7 +500,8 @@ class AGRCurationAPIClient:
     def get_fish_models(
         self,
         limit: int = 5000,
-        page: int = 0
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
     ) -> List[AffectedGenomicModel]:
         """Get zebrafish AGMs from A-Team API.
 
@@ -386,11 +510,12 @@ class AGRCurationAPIClient:
         Args:
             limit: Number of results per page
             page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
             List of AffectedGenomicModel objects for zebrafish
         """
-        return self.get_agms(data_provider="ZFIN", limit=limit, page=page)
+        return self.get_agms(data_provider="ZFIN", limit=limit, page=page, updated_after=updated_after)
 
     # Search methods
     def search_entities(
@@ -398,7 +523,8 @@ class AGRCurationAPIClient:
         entity_type: str,
         search_filters: Dict[str, Any],
         limit: int = 5000,
-        page: int = 0
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
     ) -> APIResponse:
         """Generic search method for any entity type.
 
@@ -407,12 +533,16 @@ class AGRCurationAPIClient:
             search_filters: Dictionary of search filters
             limit: Number of results per page
             page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
             APIResponse with search results
         """
-        url = f"{entity_type}/find?limit={limit}&page={page}"
-        response_data = self._make_request("POST", url, search_filters)
+        req_data = search_filters.copy()
+        self._apply_date_sorting(req_data, updated_after)
+        
+        url = f"{entity_type}/search?limit={limit}&page={page}"
+        response_data = self._make_request("POST", url, req_data)
 
         try:
             return APIResponse(**response_data)
