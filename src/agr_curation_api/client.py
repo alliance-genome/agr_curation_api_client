@@ -246,7 +246,7 @@ class AGRCurationAPIClient:
         Returns:
             List of Gene objects
         """
-        req_data = {}
+        req_data: Dict[str, Any] = {}
         self._apply_data_provider_filter(req_data, data_provider)
         self._apply_date_sorting(req_data, updated_after)
 
@@ -299,7 +299,7 @@ class AGRCurationAPIClient:
         Returns:
             List of Species objects
         """
-        req_data = {}
+        req_data: Dict[str, Any] = {}
         self._apply_date_sorting(req_data, updated_after)
 
         url = f"species/search?limit={limit}&page={page}"
@@ -383,7 +383,7 @@ class AGRCurationAPIClient:
         Returns:
             List of ExpressionAnnotation objects
         """
-        req_data = {}
+        req_data: Dict[str, Any] = {}
         self._apply_data_provider_filter(
             req_data,
             data_provider,
@@ -427,7 +427,7 @@ class AGRCurationAPIClient:
         Returns:
             List of Allele objects
         """
-        req_data = {}
+        req_data: Dict[str, Any] = {}
         self._apply_data_provider_filter(req_data, data_provider)
         self._apply_date_sorting(req_data, updated_after)
 
@@ -483,7 +483,7 @@ class AGRCurationAPIClient:
         Returns:
             List of AffectedGenomicModel objects
         """
-        req_data = {}
+        req_data: Dict[str, Any] = {}
         self._apply_data_provider_filter(req_data, data_provider)
 
         if subtype:
