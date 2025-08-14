@@ -330,7 +330,6 @@ class ExpressionAnnotation(BaseModel):
     model_config = ConfigDict(extra='allow')
 
 
-
 class AffectedGenomicModel(BaseModel):
     """Affected Genomic Model (AGM) for fish and other organisms from A-Team curation API."""
 

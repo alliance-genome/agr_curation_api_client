@@ -77,7 +77,7 @@ class AGRCurationAPIClient:
         field_name: str = "dataProvider.abbreviation"
     ) -> None:
         """Apply data provider filter to request data.
-        
+
         Args:
             req_data: Request data dictionary to modify
             data_provider: Data provider abbreviation to filter by
@@ -86,7 +86,7 @@ class AGRCurationAPIClient:
         if data_provider:
             if "searchFilters" not in req_data:
                 req_data["searchFilters"] = {}
-            
+
             req_data["searchFilters"]["dataProviderFilter"] = {
                 field_name: {
                     "queryString": data_provider,
@@ -100,7 +100,7 @@ class AGRCurationAPIClient:
         updated_after: Optional[Union[str, datetime]]
     ) -> None:
         """Apply date sorting to request data.
-        
+
         Args:
             req_data: Request data dictionary to modify
             updated_after: Filter for entities updated after this date (used for sorting)
@@ -113,7 +113,7 @@ class AGRCurationAPIClient:
                     "order": -1
                 }
             ]
-    
+
     def _filter_by_date(
         self,
         items: List[Any],
@@ -121,18 +121,18 @@ class AGRCurationAPIClient:
         date_field: str = "dbDateUpdated"
     ) -> List[Any]:
         """Filter items by date.
-        
+
         Args:
             items: List of items to filter
             updated_after: Filter for entities updated after this date
             date_field: Name of the date field to check
-        
+
         Returns:
             Filtered list of items
         """
         if not updated_after:
             return items
-        
+
         # Convert to datetime if needed and ensure it's timezone-aware
         if isinstance(updated_after, str):
             # Handle ISO format with or without timezone
@@ -147,7 +147,7 @@ class AGRCurationAPIClient:
                 threshold = updated_after.replace(tzinfo=timezone.utc)
             else:
                 threshold = updated_after
-        
+
         filtered = []
         for item in items:
             item_date = getattr(item, date_field, None)
@@ -167,13 +167,13 @@ class AGRCurationAPIClient:
                 else:
                     # Skip if not a string or datetime
                     continue
-                
+
                 if item_datetime > threshold:
                     filtered.append(item)
             else:
                 # If no date field, skip the item when filtering
                 continue
-        
+
         return filtered
 
     def _make_request(
@@ -264,7 +264,7 @@ class AGRCurationAPIClient:
 
         # Filter by date if specified
         genes = self._filter_by_date(genes, updated_after)
-        
+
         return genes
 
     def get_gene(self, gene_id: str) -> Optional[Gene]:
@@ -301,7 +301,7 @@ class AGRCurationAPIClient:
         """
         req_data = {}
         self._apply_date_sorting(req_data, updated_after)
-        
+
         url = f"species/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
 
@@ -315,7 +315,7 @@ class AGRCurationAPIClient:
 
         # Filter by date if specified
         species_list = self._filter_by_date(species_list, updated_after)
-        
+
         return species_list
 
     # Ontology endpoints
@@ -385,12 +385,12 @@ class AGRCurationAPIClient:
         """
         req_data = {}
         self._apply_data_provider_filter(
-            req_data, 
-            data_provider, 
+            req_data,
+            data_provider,
             "expressionAnnotationSubject.dataProvider.abbreviation"
         )
         self._apply_date_sorting(req_data, updated_after)
-        
+
         url = f"gene-expression-annotation/search?limit={limit}&page={page}"
 
         response_data = self._make_request("POST", url, req_data)
@@ -405,7 +405,7 @@ class AGRCurationAPIClient:
 
         # Filter by date if specified
         annotations = self._filter_by_date(annotations, updated_after)
-        
+
         return annotations
 
     # Allele endpoints
@@ -444,7 +444,7 @@ class AGRCurationAPIClient:
 
         # Filter by date if specified
         alleles = self._filter_by_date(alleles, updated_after)
-        
+
         return alleles
 
     def get_allele(self, allele_id: str) -> Optional[Allele]:
@@ -485,12 +485,12 @@ class AGRCurationAPIClient:
         """
         req_data = {}
         self._apply_data_provider_filter(req_data, data_provider)
-        
+
         if subtype:
             if "searchFilters" not in req_data:
                 req_data["searchFilters"] = {}
             req_data["searchFilters"]["subtype"] = subtype
-        
+
         self._apply_date_sorting(req_data, updated_after)
 
         url = f"agm/search?limit={limit}&page={page}"
@@ -506,7 +506,7 @@ class AGRCurationAPIClient:
 
         # Filter by date if specified
         agms = self._filter_by_date(agms, updated_after)
-        
+
         return agms
 
     def get_agm(self, agm_id: str) -> Optional[AffectedGenomicModel]:
@@ -567,7 +567,7 @@ class AGRCurationAPIClient:
         """
         req_data = search_filters.copy()
         self._apply_date_sorting(req_data, updated_after)
-        
+
         url = f"{entity_type}/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
 
