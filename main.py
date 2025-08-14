@@ -559,6 +559,55 @@ def fetch_recently_updated_entities(client: AGRCurationAPIClient, days_back: int
     return all_successful
 
 
+def test_wb_data_provider(client: AGRCurationAPIClient, limit: int = 5):
+    """Test fetching genes from WB data provider to verify searchFilters format.
+    
+    Args:
+        client: AGR API client instance
+        limit: Maximum number of results to fetch
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("TESTING WB DATA PROVIDER FILTERING")
+    print("="*70)
+    
+    try:
+        print("Fetching genes from WB (WormBase) data provider...")
+        wb_genes = client.get_genes(data_provider="WB", limit=limit)
+        
+        if wb_genes:
+            print(f"✓ Successfully retrieved {len(wb_genes)} WB gene(s)")
+            for i, gene in enumerate(wb_genes[:3], 1):  # Show first 3
+                symbol = gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'
+                data_provider = getattr(gene.dataProvider, 'abbreviation', 'N/A') if gene.dataProvider else 'N/A'
+                print(f"  {i}. {symbol} (Provider: {data_provider})")
+        else:
+            print("❌ No WB genes found")
+            return False
+        
+        # Test with a different data provider for comparison
+        print(f"\nTesting MGI data provider for comparison...")
+        mgi_genes = client.get_genes(data_provider="MGI", limit=limit)
+        
+        if mgi_genes:
+            print(f"✓ Successfully retrieved {len(mgi_genes)} MGI gene(s)")
+            for i, gene in enumerate(mgi_genes[:3], 1):  # Show first 3
+                symbol = gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'
+                data_provider = getattr(gene.dataProvider, 'abbreviation', 'N/A') if gene.dataProvider else 'N/A'
+                print(f"  {i}. {symbol} (Provider: {data_provider})")
+        else:
+            print("❌ No MGI genes found")
+        
+        print(f"\n✓ Data provider filtering test completed successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error testing WB data provider: {e}")
+        return False
+
+
 def main():
     # Print header
     print("="*70)
@@ -601,6 +650,10 @@ def main():
     
     # Demonstrate date filtering functionality
     success = fetch_recently_updated_entities(client, days_back=30, limit=LIMIT, verbose=False)
+    all_successful = all_successful and success
+    
+    # Test WB data provider filtering
+    success = test_wb_data_provider(client, limit=LIMIT)
     all_successful = all_successful and success
     
     # Summary

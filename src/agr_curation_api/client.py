@@ -70,6 +70,30 @@ class AGRCurationAPIClient:
         """Context manager exit."""
         pass
 
+    def _apply_data_provider_filter(
+        self,
+        req_data: Dict[str, Any],
+        data_provider: Optional[str],
+        field_name: str = "dataProvider.abbreviation"
+    ) -> None:
+        """Apply data provider filter to request data.
+        
+        Args:
+            req_data: Request data dictionary to modify
+            data_provider: Data provider abbreviation to filter by
+            field_name: Name of the field to filter on
+        """
+        if data_provider:
+            if "searchFilters" not in req_data:
+                req_data["searchFilters"] = {}
+            
+            req_data["searchFilters"]["dataProviderFilter"] = {
+                field_name: {
+                    "queryString": data_provider,
+                    "tokenOperator": "OR"
+                }
+            }
+
     def _apply_date_sorting(
         self,
         req_data: Dict[str, Any],
@@ -223,9 +247,7 @@ class AGRCurationAPIClient:
             List of Gene objects
         """
         req_data = {}
-        if data_provider:
-            req_data["dataProvider.abbreviation"] = data_provider
-        
+        self._apply_data_provider_filter(req_data, data_provider)
         self._apply_date_sorting(req_data, updated_after)
 
         url = f"gene/search?limit={limit}&page={page}"
@@ -361,7 +383,12 @@ class AGRCurationAPIClient:
         Returns:
             List of ExpressionAnnotation objects
         """
-        req_data = {"expressionAnnotationSubject.dataProvider.abbreviation": data_provider}
+        req_data = {}
+        self._apply_data_provider_filter(
+            req_data, 
+            data_provider, 
+            "expressionAnnotationSubject.dataProvider.abbreviation"
+        )
         self._apply_date_sorting(req_data, updated_after)
         
         url = f"gene-expression-annotation/search?limit={limit}&page={page}"
@@ -401,9 +428,7 @@ class AGRCurationAPIClient:
             List of Allele objects
         """
         req_data = {}
-        if data_provider:
-            req_data["dataProvider.abbreviation"] = data_provider
-        
+        self._apply_data_provider_filter(req_data, data_provider)
         self._apply_date_sorting(req_data, updated_after)
 
         url = f"allele/search?limit={limit}&page={page}"
@@ -459,10 +484,12 @@ class AGRCurationAPIClient:
             List of AffectedGenomicModel objects
         """
         req_data = {}
-        if data_provider:
-            req_data["dataProvider.abbreviation"] = data_provider
+        self._apply_data_provider_filter(req_data, data_provider)
+        
         if subtype:
-            req_data["subtype"] = subtype
+            if "searchFilters" not in req_data:
+                req_data["searchFilters"] = {}
+            req_data["searchFilters"]["subtype"] = subtype
         
         self._apply_date_sorting(req_data, updated_after)
 
