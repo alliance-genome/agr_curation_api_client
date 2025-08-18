@@ -333,11 +333,18 @@ def fetch_alleles(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = 
         return False
 
 
-
 def display_agm(agm: AffectedGenomicModel, verbose: bool = False):
     """Display AGM (Affected Genomic Model) information."""
     # Try to find a meaningful name/identifier
-    display_name = agm.name or agm.curie or agm.uniqueId or agm.modEntityId or 'N/A'
+    display_name = 'N/A'
+    if agm.agmFullName and agm.agmFullName.displayText:
+        display_name = agm.agmFullName.displayText
+    elif agm.curie:
+        display_name = agm.curie
+    elif agm.uniqueId:
+        display_name = agm.uniqueId
+    elif agm.modEntityId:
+        display_name = agm.modEntityId
     
     print(f"\n{'='*60}")
     print(f"AGM: {display_name}")
@@ -522,23 +529,29 @@ def fetch_recently_updated_entities(client: AGRCurationAPIClient, days_back: int
         print(f"Error fetching alleles: {e}")
         all_successful = False
     
-    # Fetch recently updated AGMs
-    print(f"\n--- Recently Updated AGMs ---")
+    # Fetch recently updated Fish Models
+    print(f"\n--- Recently Updated Fish Models ---")
     try:
-        agms = client.get_agms(limit=limit, updated_after=date_str)
+        fish_models = client.get_fish_models(limit=limit, updated_after=date_str)
         
-        if agms:
-            print(f"Found {len(agms)} recently updated AGM(s)")
-            for agm in agms[:3]:  # Show first 3
-                display_name = agm.name or agm.curie or agm.uniqueId or 'N/A'
+        if fish_models:
+            print(f"Found {len(fish_models)} recently updated fish model(s)")
+            for agm in fish_models[:3]:  # Show first 3
+                display_name = 'N/A'
+                if agm.agmFullName and agm.agmFullName.displayText:
+                    display_name = agm.agmFullName.displayText
+                elif agm.curie:
+                    display_name = agm.curie
+                elif agm.uniqueId:
+                    display_name = agm.uniqueId
                 if hasattr(agm, 'dbDateUpdated') and agm.dbDateUpdated:
                     print(f"  • {display_name} (Updated: {agm.dbDateUpdated})")
                 else:
                     print(f"  • {display_name}")
         else:
-            print("No recently updated AGMs found")
+            print("No recently updated fish models found")
     except Exception as e:
-        print(f"Error fetching AGMs: {e}")
+        print(f"Error fetching fish models: {e}")
         all_successful = False
     
     # Example with custom date

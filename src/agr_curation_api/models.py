@@ -338,7 +338,7 @@ class AffectedGenomicModel(BaseModel):
     uniqueId: Optional[str] = None
     modEntityId: Optional[str] = None
     modInternalId: Optional[str] = None
-    name: Optional[str] = None
+    agmFullName: Optional[SlotAnnotation] = None
     dataProvider: Optional[DataProvider] = None
     taxon: Optional[Union[str, Dict[str, Any]]] = None
     species: Optional[Union[str, Species, Dict[str, Any]]] = None

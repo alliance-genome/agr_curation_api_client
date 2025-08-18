@@ -475,7 +475,7 @@ class AGRCurationAPIClient:
 
         Args:
             data_provider: Filter by data provider abbreviation (e.g., 'ZFIN' for zebrafish)
-            subtype: Filter by AGM subtype (e.g., 'strain', 'genotype')
+            subtype: Filter by AGM subtype name (e.g., 'strain', 'genotype')
             limit: Number of results per page
             page: Page number (0-based)
             updated_after: Filter for entities updated after this date (ISO format string or datetime)
@@ -489,7 +489,12 @@ class AGRCurationAPIClient:
         if subtype:
             if "searchFilters" not in req_data:
                 req_data["searchFilters"] = {}
-            req_data["searchFilters"]["subtype"] = subtype
+            req_data["searchFilters"]["subtypeFilter"] = {
+                "subtype.name": {
+                    "queryString": subtype,
+                    "tokenOperator": "OR"
+                }
+            }
 
         self._apply_date_sorting(req_data, updated_after)
 
@@ -542,7 +547,7 @@ class AGRCurationAPIClient:
         Returns:
             List of AffectedGenomicModel objects for zebrafish
         """
-        return self.get_agms(data_provider="ZFIN", limit=limit, page=page, updated_after=updated_after)
+        return self.get_agms(data_provider="ZFIN", subtype="fish", limit=limit, page=page, updated_after=updated_after)
 
     # Search methods
     def search_entities(
