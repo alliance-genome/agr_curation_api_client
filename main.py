@@ -572,6 +572,56 @@ def fetch_recently_updated_entities(client: AGRCurationAPIClient, days_back: int
     return all_successful
 
 
+def fetch_wb_strain_agms(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
+    """Fetch and display AGMs from WB (WormBase) with subtype 'strain'.
+    
+    Args:
+        client: AGR API client instance
+        limit: Maximum number of results to fetch
+        verbose: Show detailed information
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("FETCHING WB STRAIN AGMS")
+    print("="*70)
+    
+    try:
+        print("Fetching AGMs from WB with subtype='strain'...")
+        wb_strains = client.get_agms(data_provider="WB", subtype="strain", limit=limit)
+        
+        if hasattr(wb_strains, 'results'):
+            agms = wb_strains.results
+        else:
+            agms = wb_strains if isinstance(wb_strains, list) else []
+        
+        if agms:
+            print(f"\n✓ Successfully retrieved {len(agms)} WB strain AGM(s)")
+            
+            for agm_data in agms[:limit]:
+                try:
+                    agm = AffectedGenomicModel(**agm_data) if isinstance(agm_data, dict) else agm_data
+                    display_agm(agm, verbose)
+                except ValidationError as e:
+                    print(f"\nError parsing AGM data: {e}")
+                    if verbose:
+                        print(f"Raw data: {json.dumps(agm_data, indent=2, default=str)}")
+        else:
+            print("❌ No WB strain AGMs found")
+            return False
+        
+        print(f"\n✓ WB strain AGMs fetched successfully!")
+        return True
+        
+    except AGRAPIError as e:
+        print(f"❌ Error fetching WB strain AGMs: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return False
+
+
 def test_wb_data_provider(client: AGRCurationAPIClient, limit: int = 5):
     """Test fetching genes from WB data provider to verify searchFilters format.
     
@@ -667,6 +717,10 @@ def main():
     
     # Test WB data provider filtering
     success = test_wb_data_provider(client, limit=LIMIT)
+    all_successful = all_successful and success
+    
+    # Fetch WB strain AGMs
+    success = fetch_wb_strain_agms(client, limit=LIMIT, verbose=True)
     all_successful = all_successful and success
     
     # Summary
