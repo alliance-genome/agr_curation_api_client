@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agr-curation-api-client"
-version = "0.5.0"
+version = "0.5.1"
 description = "Unified Python client for Alliance of Genome Resources (AGR) curation APIs"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "Alliance of Genome Resources", email = "valearna@caltech.edu"},
@@ -22,6 +22,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -62,7 +63,7 @@ where = ["src"]
 agr_curation_api = ["py.typed"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -70,7 +71,7 @@ ignore_missing_imports = true
 
 [tool.black]
 line-length = 120
-target-version = ['py39']
+target-version = ['py38']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
