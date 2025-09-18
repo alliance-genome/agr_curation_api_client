@@ -12,7 +12,7 @@ from agr_curation_api import (
     AGRCurationAPIClient,
     APIConfig,
     Gene,
-    Species,
+    NCBITaxonTerm,
     OntologyTerm,
     Allele,
     AffectedGenomicModel,
@@ -79,47 +79,42 @@ def display_gene(gene, verbose: bool = False):
             print(f"  Date Created: {gene.dateCreated}")
 
 
-def display_species(species: Species, verbose: bool = False):
-    """Display species information."""
-    # Get species name from various sources
-    species_name = "N/A"
-    
-    # Try different name fields
-    if hasattr(species, 'displayName') and species.displayName:
-        species_name = species.displayName
-    elif hasattr(species, 'name') and species.name:
-        species_name = species.name
-    elif hasattr(species, 'curie') and species.curie:
-        species_name = species.curie
-    elif species.taxon:
-        if hasattr(species.taxon, 'name') and species.taxon.name:
-            species_name = species.taxon.name
-        elif isinstance(species.taxon, dict) and 'name' in species.taxon:
-            species_name = species.taxon['name']
-    
+def display_ncbi_taxon(taxon: NCBITaxonTerm, verbose: bool = False):
+    """Display NCBI Taxon term information."""
+    # Get taxon name
+    taxon_name = taxon.name or taxon.curie or "N/A"
+
     print(f"\n{'='*60}")
-    print(f"Species: {species_name}")
+    print(f"NCBI Taxon: {taxon_name}")
     print(f"{'='*60}")
-    
-    print(f"Abbreviation: {getattr(species, 'abbreviation', None) or 'N/A'}")
-    print(f"Display Name: {getattr(species, 'displayName', None) or 'N/A'}")
-    print(f"CURIE: {getattr(species, 'curie', None) or 'N/A'}")
-    
+
+    print(f"CURIE: {taxon.curie or 'N/A'}")
+    print(f"Name: {taxon.name or 'N/A'}")
+
+    if taxon.definition:
+        # Truncate long definitions unless verbose
+        definition = taxon.definition
+        if not verbose and len(definition) > 100:
+            definition = definition[:97] + "..."
+        print(f"Definition: {definition}")
+
+    print(f"Namespace: {taxon.namespace or 'N/A'}")
+    print(f"Obsolete: {taxon.obsolete}")
+
     if verbose:
-        print("\nDebug - Model data:")
-        data = species.model_dump()
-        for key, value in data.items():
-            if value is not None:
-                print(f"  {key}: {value}")
-    
-    if hasattr(species, 'genomeAssembly') and species.genomeAssembly:
-        print(f"Genome Assembly: {species.genomeAssembly}")
-    
-    if hasattr(species, 'phylogeneticOrder') and species.phylogeneticOrder is not None:
-        print(f"Phylogenetic Order: {species.phylogeneticOrder}")
-    
-    if verbose and hasattr(species, 'commonNames') and species.commonNames:
-        print(f"Common Names: {', '.join(species.commonNames)}")
+        print("\nAdditional Details:")
+        if hasattr(taxon, 'childCount') and taxon.childCount is not None:
+            print(f"  Direct Children: {taxon.childCount}")
+        if hasattr(taxon, 'descendantCount') and taxon.descendantCount is not None:
+            print(f"  Total Descendants: {taxon.descendantCount}")
+        if hasattr(taxon, 'synonyms') and taxon.synonyms:
+            print(f"  Synonyms: {', '.join(taxon.synonyms[:5])}")
+            if len(taxon.synonyms) > 5:
+                print(f"    ... and {len(taxon.synonyms) - 5} more")
+        if hasattr(taxon, 'ancestors') and taxon.ancestors:
+            print(f"  Ancestors: {', '.join(taxon.ancestors[:5])}")
+            if len(taxon.ancestors) > 5:
+                print(f"    ... and {len(taxon.ancestors) - 5} more")
 
 
 def display_ontology_term(term: OntologyTerm, verbose: bool = False):
@@ -230,33 +225,33 @@ def fetch_genes(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = Fa
 
 
 def fetch_species(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
-    """Fetch and display species."""
+    """Fetch and display NCBI Taxon terms (species)."""
     print("\n" + "="*70)
-    print("FETCHING SPECIES")
+    print("FETCHING SPECIES (NCBI TAXON TERMS)")
     print("="*70)
-    
+
     try:
         response = client.get_species(limit=limit)
-        
+
         if hasattr(response, 'results'):
-            species_list = response.results
+            taxon_list = response.results
         else:
-            species_list = response if isinstance(response, list) else []
-        
-        print(f"\nFound {len(species_list)} species")
-        
-        for species_data in species_list[:limit]:
+            taxon_list = response if isinstance(response, list) else []
+
+        print(f"\nFound {len(taxon_list)} NCBI Taxon term(s)")
+
+        for taxon_data in taxon_list[:limit]:
             try:
-                species = Species(**species_data) if isinstance(species_data, dict) else species_data
-                display_species(species, verbose)
+                taxon = NCBITaxonTerm(**taxon_data) if isinstance(taxon_data, dict) else taxon_data
+                display_ncbi_taxon(taxon, verbose)
             except ValidationError as e:
-                print(f"\nError parsing species data: {e}")
+                print(f"\nError parsing NCBI Taxon data: {e}")
                 if verbose:
-                    print(f"Raw data: {json.dumps(species_data, indent=2, default=str)}")
-        
+                    print(f"Raw data: {json.dumps(taxon_data, indent=2, default=str)}")
+
         return True
     except AGRAPIError as e:
-        print(f"\nError fetching species: {e}")
+        print(f"\nError fetching NCBI Taxon terms: {e}")
         return False
     except Exception as e:
         print(f"\nUnexpected error: {e}")
@@ -574,31 +569,31 @@ def fetch_recently_updated_entities(client: AGRCurationAPIClient, days_back: int
 
 def fetch_wb_strain_agms(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
     """Fetch and display AGMs from WB (WormBase) with subtype 'strain'.
-    
+
     Args:
         client: AGR API client instance
         limit: Maximum number of results to fetch
         verbose: Show detailed information
-    
+
     Returns:
         bool: True if successful, False otherwise
     """
     print("\n" + "="*70)
     print("FETCHING WB STRAIN AGMS")
     print("="*70)
-    
+
     try:
         print("Fetching AGMs from WB with subtype='strain'...")
         wb_strains = client.get_agms(data_provider="WB", subtype="strain", limit=limit)
-        
+
         if hasattr(wb_strains, 'results'):
             agms = wb_strains.results
         else:
             agms = wb_strains if isinstance(wb_strains, list) else []
-        
+
         if agms:
             print(f"\n✓ Successfully retrieved {len(agms)} WB strain AGM(s)")
-            
+
             for agm_data in agms[:limit]:
                 try:
                     agm = AffectedGenomicModel(**agm_data) if isinstance(agm_data, dict) else agm_data
@@ -610,12 +605,89 @@ def fetch_wb_strain_agms(client: AGRCurationAPIClient, limit: int = 5, verbose: 
         else:
             print("❌ No WB strain AGMs found")
             return False
-        
+
         print(f"\n✓ WB strain AGMs fetched successfully!")
         return True
-        
+
     except AGRAPIError as e:
         print(f"❌ Error fetching WB strain AGMs: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return False
+
+
+def fetch_wb_transgenes(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
+    """Fetch and display transgene alleles from WB (WormBase).
+
+    Args:
+        client: AGR API client instance
+        limit: Maximum number of results to fetch
+        verbose: Show detailed information
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("FETCHING WB TRANSGENES")
+    print("="*70)
+
+    try:
+        print("Fetching transgene alleles from WB...")
+        transgenes = client.get_alleles(data_provider="WB", transgenes_only=True, limit=limit)
+
+        if hasattr(transgenes, 'results'):
+            alleles = transgenes.results
+        else:
+            alleles = transgenes if isinstance(transgenes, list) else []
+
+        if alleles:
+            print(f"\n✓ Successfully retrieved {len(alleles)} WB transgene(s)")
+
+            for allele_data in alleles[:limit]:
+                try:
+                    allele = Allele(**allele_data) if isinstance(allele_data, dict) else allele_data
+                    print(f"\n{'='*60}")
+                    print(f"Transgene: {allele.curie or 'N/A'}")
+                    print(f"{'='*60}")
+
+                    if allele.alleleSymbol:
+                        print(f"Symbol: {allele.alleleSymbol.displayText}")
+
+                    if allele.alleleFullName:
+                        print(f"Full Name: {allele.alleleFullName.displayText}")
+
+                    if verbose:
+                        print("\nAdditional Details:")
+                        if allele.laboratoryOfOrigin:
+                            if hasattr(allele.laboratoryOfOrigin, 'name'):
+                                lab_name = allele.laboratoryOfOrigin.name or allele.laboratoryOfOrigin.abbreviation
+                            else:
+                                lab_name = str(allele.laboratoryOfOrigin)
+                            print(f"  Lab of Origin: {lab_name}")
+
+                        if allele.isExtrachromosomal is not None:
+                            print(f"  Extrachromosomal: {allele.isExtrachromosomal}")
+                        if allele.isIntegrated is not None:
+                            print(f"  Integrated: {allele.isIntegrated}")
+                        if allele.references:
+                            print(f"  References: {len(allele.references)} publication(s)")
+                        if allele.dateCreated:
+                            print(f"  Date Created: {allele.dateCreated}")
+
+                except ValidationError as e:
+                    print(f"\nError parsing transgene data: {e}")
+                    if verbose:
+                        print(f"Raw data: {json.dumps(allele_data, indent=2, default=str)}")
+        else:
+            print("❌ No WB transgenes found")
+            return False
+
+        print(f"\n✓ WB transgenes fetched successfully!")
+        return True
+
+    except AGRAPIError as e:
+        print(f"❌ Error fetching WB transgenes: {e}")
         return False
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
@@ -722,7 +794,11 @@ def main():
     # Fetch WB strain AGMs
     success = fetch_wb_strain_agms(client, limit=LIMIT, verbose=True)
     all_successful = all_successful and success
-    
+
+    # Fetch WB transgenes
+    success = fetch_wb_transgenes(client, limit=LIMIT, verbose=True)
+    all_successful = all_successful and success
+
     # Summary
     print("\n" + "="*70)
     print("SUMMARY")

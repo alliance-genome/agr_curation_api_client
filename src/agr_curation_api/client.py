@@ -14,6 +14,7 @@ from .models import (
     APIConfig,
     Gene,
     Species,
+    NCBITaxonTerm,
     OntologyTerm,
     ExpressionAnnotation,
     Allele,
@@ -282,14 +283,17 @@ class AGRCurationAPIClient:
         except AGRAPIError:
             return None
 
-    # Species endpoints
+    # Species endpoints (NCBITaxonTerm)
     def get_species(
         self,
         limit: int = 100,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None
-    ) -> List[Species]:
-        """Get species data from A-Team API.
+    ) -> List[NCBITaxonTerm]:
+        """Get species data from A-Team API using NCBITaxonTerm endpoint.
+
+        This method retrieves NCBI Taxonomy terms which represent species
+        and other taxonomic entities.
 
         Args:
             limit: Number of results per page
@@ -297,26 +301,62 @@ class AGRCurationAPIClient:
             updated_after: Filter for entities updated after this date (ISO format string or datetime)
 
         Returns:
-            List of Species objects
+            List of NCBITaxonTerm objects representing species
         """
         req_data: Dict[str, Any] = {}
         self._apply_date_sorting(req_data, updated_after)
 
-        url = f"species/search?limit={limit}&page={page}"
+        url = f"ncbitaxonterm/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
 
         species_list = []
         if "results" in response_data:
-            for species_data in response_data["results"]:
+            for taxon_data in response_data["results"]:
                 try:
-                    species_list.append(Species(**species_data))
+                    species_list.append(NCBITaxonTerm(**taxon_data))
                 except ValidationError as e:
-                    logger.warning(f"Failed to parse species data: {e}")
+                    logger.warning(f"Failed to parse NCBITaxon data: {e}")
 
         # Filter by date if specified
         species_list = self._filter_by_date(species_list, updated_after)
 
         return species_list
+
+    def get_ncbi_taxon_terms(
+        self,
+        limit: int = 100,
+        page: int = 0,
+        updated_after: Optional[Union[str, datetime]] = None
+    ) -> List[NCBITaxonTerm]:
+        """Get NCBI Taxon terms from A-Team API.
+
+        This is an alias for get_species() that makes the return type clearer.
+        Both methods return NCBITaxonTerm objects.
+
+        Args:
+            limit: Number of results per page
+            page: Page number (0-based)
+            updated_after: Filter for entities updated after this date (ISO format string or datetime)
+
+        Returns:
+            List of NCBITaxonTerm objects
+        """
+        return self.get_species(limit=limit, page=page, updated_after=updated_after)
+
+    def get_ncbi_taxon_term(self, taxon_id: str) -> Optional[NCBITaxonTerm]:
+        """Get a specific NCBI Taxon term by ID.
+
+        Args:
+            taxon_id: NCBI Taxon CURIE (e.g., 'NCBITaxon:9606' for human)
+
+        Returns:
+            NCBITaxonTerm object or None if not found
+        """
+        try:
+            response_data = self._make_request("GET", f"ncbitaxonterm/{taxon_id}")
+            return NCBITaxonTerm(**response_data)
+        except AGRAPIError:
+            return None
 
     # Ontology endpoints
     def get_ontology_root_nodes(self, node_type: str) -> List[OntologyTerm]:
@@ -414,7 +454,8 @@ class AGRCurationAPIClient:
         data_provider: Optional[str] = None,
         limit: int = 5000,
         page: int = 0,
-        updated_after: Optional[Union[str, datetime]] = None
+        updated_after: Optional[Union[str, datetime]] = None,
+        transgenes_only: bool = False
     ) -> List[Allele]:
         """Get alleles from A-Team API.
 
@@ -423,15 +464,30 @@ class AGRCurationAPIClient:
             limit: Number of results per page
             page: Page number (0-based)
             updated_after: Filter for entities updated after this date (ISO format string or datetime)
+        transgenes_only: If True, return transgenes only (currently works for WB only
 
         Returns:
             List of Allele objects
         """
+        if transgenes_only and data_provider != "WB":
+            raise AGRAPIError("Not implemented: transgenes_only is only supported for WB data provider")
+
         req_data: Dict[str, Any] = {}
         self._apply_data_provider_filter(req_data, data_provider)
         self._apply_date_sorting(req_data, updated_after)
 
         url = f"allele/search?limit={limit}&page={page}"
+
+        if transgenes_only and data_provider == "WB":
+            if "searchFilters" not in req_data:
+                req_data["searchFilters"] = {}
+            req_data["searchFilters"]["primaryExternalIdFilter"] = {
+                "primaryExternalId": {
+                    "queryString": "WB:WBTransgene",
+                    "tokenOperator": "OR"
+                }
+            }
+
         response_data = self._make_request("POST", url, req_data)
 
         alleles = []
