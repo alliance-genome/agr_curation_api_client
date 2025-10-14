@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 
 from pydantic import ValidationError
@@ -696,22 +697,22 @@ def fetch_wb_transgenes(client: AGRCurationAPIClient, limit: int = 5, verbose: b
 
 def test_wb_data_provider(client: AGRCurationAPIClient, limit: int = 5):
     """Test fetching genes from WB data provider to verify searchFilters format.
-    
+
     Args:
         client: AGR API client instance
         limit: Maximum number of results to fetch
-    
+
     Returns:
         bool: True if successful, False otherwise
     """
     print("\n" + "="*70)
     print("TESTING WB DATA PROVIDER FILTERING")
     print("="*70)
-    
+
     try:
         print("Fetching genes from WB (WormBase) data provider...")
         wb_genes = client.get_genes(data_provider="WB", limit=limit)
-        
+
         if wb_genes:
             print(f"✓ Successfully retrieved {len(wb_genes)} WB gene(s)")
             for i, gene in enumerate(wb_genes[:3], 1):  # Show first 3
@@ -721,11 +722,11 @@ def test_wb_data_provider(client: AGRCurationAPIClient, limit: int = 5):
         else:
             print("❌ No WB genes found")
             return False
-        
+
         # Test with a different data provider for comparison
         print(f"\nTesting MGI data provider for comparison...")
         mgi_genes = client.get_genes(data_provider="MGI", limit=limit)
-        
+
         if mgi_genes:
             print(f"✓ Successfully retrieved {len(mgi_genes)} MGI gene(s)")
             for i, gene in enumerate(mgi_genes[:3], 1):  # Show first 3
@@ -734,12 +735,292 @@ def test_wb_data_provider(client: AGRCurationAPIClient, limit: int = 5):
                 print(f"  {i}. {symbol} (Provider: {data_provider})")
         else:
             print("❌ No MGI genes found")
-        
+
         print(f"\n✓ Data provider filtering test completed successfully!")
         return True
-        
+
     except Exception as e:
         print(f"❌ Error testing WB data provider: {e}")
+        return False
+
+
+def test_graphql_genes(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
+    """Test GraphQL gene queries with different field selections.
+
+    Args:
+        client: AGR API client instance
+        limit: Maximum number of results to fetch
+        verbose: Show detailed information
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("TESTING GRAPHQL GENE QUERIES")
+    print("="*70)
+
+    all_successful = True
+
+    # Test 1: Get genes with minimal fields
+    print("\n--- Test 1: Minimal Fields (C. elegans genes) ---")
+    try:
+        genes = client.get_genes_graphql(
+            fields="minimal",
+            taxon="NCBITaxon:6239",
+            limit=limit
+        )
+        print(f"✓ Found {len(genes)} genes with minimal fields")
+        for gene in genes[:3]:
+            symbol = gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'
+            print(f"  - {gene.primaryExternalId}: {symbol}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    # Test 2: Get genes with standard fields
+    print("\n--- Test 2: Standard Fields (WB data provider) ---")
+    try:
+        genes = client.get_genes_graphql(
+            fields="standard",
+            data_provider="WB",
+            limit=limit
+        )
+        print(f"✓ Found {len(genes)} genes with standard fields")
+        for gene in genes[:2]:
+            print(f"\n  Gene: {gene.primaryExternalId}")
+            if gene.geneSymbol:
+                print(f"    Symbol: {gene.geneSymbol.displayText}")
+            if gene.geneFullName:
+                print(f"    Full Name: {gene.geneFullName.displayText}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    # Test 3: Get genes with custom field list
+    print("\n--- Test 3: Custom Field List ---")
+    try:
+        genes = client.get_genes_graphql(
+            fields=["primaryExternalId", "geneSymbol", "geneFullName"],
+            data_provider="WB",
+            limit=3
+        )
+        print(f"✓ Found {len(genes)} genes with custom fields")
+        for gene in genes:
+            symbol = gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'
+            print(f"  - {gene.primaryExternalId}: {symbol}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    # Test 4: Get single gene by ID
+    print("\n--- Test 4: Get Single Gene by ID ---")
+    try:
+        genes = client.get_genes_graphql(data_provider="WB", limit=1)
+        if genes:
+            gene_id = genes[0].primaryExternalId
+            print(f"Fetching gene: {gene_id}")
+            gene = client.get_gene_graphql(gene_id, fields="basic")
+            if gene:
+                print(f"  ✓ Found: {gene.primaryExternalId}")
+                if gene.geneSymbol:
+                    print(f"    Symbol: {gene.geneSymbol.displayText}")
+        else:
+            print("  ⚠️ No genes available to test single gene fetch")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    if all_successful:
+        print("\n✓ All GraphQL gene tests completed successfully!")
+    else:
+        print("\n⚠️ Some GraphQL gene tests failed")
+
+    return all_successful
+
+
+def test_graphql_alleles(client: AGRCurationAPIClient, limit: int = 5, verbose: bool = False):
+    """Test GraphQL allele queries.
+
+    Args:
+        client: AGR API client instance
+        limit: Maximum number of results to fetch
+        verbose: Show detailed information
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("TESTING GRAPHQL ALLELE QUERIES")
+    print("="*70)
+
+    try:
+        # Test: Get alleles with default fields
+        print("\n--- Test: Alleles from WB ---")
+        alleles = client.get_alleles_graphql(
+            data_provider="WB",
+            limit=limit
+        )
+        print(f"✓ Found {len(alleles)} alleles via GraphQL")
+        for allele in alleles[:3]:
+            symbol = allele.alleleSymbol.displayText if allele.alleleSymbol else 'N/A'
+            print(f"  - {allele.primaryExternalId}: {symbol}")
+
+        print("\n✓ GraphQL allele tests completed successfully!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
+
+
+def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, runs: int = 3):
+    """Benchmark REST API vs GraphQL with different field sets.
+
+    Args:
+        client: AGR API client instance
+        limit: Number of records to fetch per test
+        runs: Number of times to run each test for averaging
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("PERFORMANCE BENCHMARK: REST API vs GraphQL")
+    print("="*70)
+    print(f"Configuration: {limit} records, {runs} runs per test")
+    print(f"Testing with WB (WormBase) genes")
+
+    results = {}
+
+    try:
+        # Test 1: REST API (all fields)
+        print("\n--- Test 1: REST API (all fields) ---")
+        rest_times = []
+        for run in range(runs):
+            start = time.time()
+            genes = client.get_genes(data_provider="WB", limit=limit)
+            elapsed = time.time() - start
+            rest_times.append(elapsed)
+            print(f"  Run {run+1}: {elapsed:.3f}s ({len(genes)} genes)")
+
+        rest_avg = sum(rest_times) / len(rest_times)
+        results['REST API (all fields)'] = rest_avg
+        print(f"  Average: {rest_avg:.3f}s")
+
+        # Test 2: GraphQL with minimal fields
+        print("\n--- Test 2: GraphQL (minimal fields) ---")
+        minimal_times = []
+        for run in range(runs):
+            start = time.time()
+            genes = client.get_genes_graphql(
+                fields="minimal",
+                data_provider="WB",
+                limit=limit
+            )
+            elapsed = time.time() - start
+            minimal_times.append(elapsed)
+            print(f"  Run {run+1}: {elapsed:.3f}s ({len(genes)} genes)")
+
+        minimal_avg = sum(minimal_times) / len(minimal_times)
+        results['GraphQL (minimal)'] = minimal_avg
+        print(f"  Average: {minimal_avg:.3f}s")
+
+        # Test 3: GraphQL with basic fields
+        print("\n--- Test 3: GraphQL (basic fields) ---")
+        basic_times = []
+        for run in range(runs):
+            start = time.time()
+            genes = client.get_genes_graphql(
+                fields="basic",
+                data_provider="WB",
+                limit=limit
+            )
+            elapsed = time.time() - start
+            basic_times.append(elapsed)
+            print(f"  Run {run+1}: {elapsed:.3f}s ({len(genes)} genes)")
+
+        basic_avg = sum(basic_times) / len(basic_times)
+        results['GraphQL (basic)'] = basic_avg
+        print(f"  Average: {basic_avg:.3f}s")
+
+        # Test 4: GraphQL with standard fields
+        print("\n--- Test 4: GraphQL (standard fields) ---")
+        standard_times = []
+        for run in range(runs):
+            start = time.time()
+            genes = client.get_genes_graphql(
+                fields="standard",
+                data_provider="WB",
+                limit=limit
+            )
+            elapsed = time.time() - start
+            standard_times.append(elapsed)
+            print(f"  Run {run+1}: {elapsed:.3f}s ({len(genes)} genes)")
+
+        standard_avg = sum(standard_times) / len(standard_times)
+        results['GraphQL (standard)'] = standard_avg
+        print(f"  Average: {standard_avg:.3f}s")
+
+        # Test 5: GraphQL with full fields
+        print("\n--- Test 5: GraphQL (full fields) ---")
+        full_times = []
+        for run in range(runs):
+            start = time.time()
+            genes = client.get_genes_graphql(
+                fields="full",
+                data_provider="WB",
+                limit=limit
+            )
+            elapsed = time.time() - start
+            full_times.append(elapsed)
+            print(f"  Run {run+1}: {elapsed:.3f}s ({len(genes)} genes)")
+
+        full_avg = sum(full_times) / len(full_times)
+        results['GraphQL (full)'] = full_avg
+        print(f"  Average: {full_avg:.3f}s")
+
+        # Summary table
+        print("\n" + "="*70)
+        print("PERFORMANCE SUMMARY")
+        print("="*70)
+        print(f"{'Method':<30} {'Avg Time (s)':<15} {'vs REST':<15} {'Speedup':<15}")
+        print("-"*70)
+
+        rest_baseline = results['REST API (all fields)']
+        for method, avg_time in results.items():
+            diff = avg_time - rest_baseline
+            diff_pct = ((avg_time - rest_baseline) / rest_baseline) * 100
+            speedup = rest_baseline / avg_time if avg_time > 0 else 0
+
+            if method == 'REST API (all fields)':
+                print(f"{method:<30} {avg_time:>8.3f}s       {'(baseline)':<15} {'-':<15}")
+            else:
+                sign = '+' if diff > 0 else ''
+                print(f"{method:<30} {avg_time:>8.3f}s       {sign}{diff_pct:>5.1f}%          {speedup:.2f}x")
+
+        print("\n" + "="*70)
+
+        # Analysis
+        best_method = min(results.items(), key=lambda x: x[1])
+        print(f"\n🏆 Best performance: {best_method[0]} ({best_method[1]:.3f}s average)")
+
+        if best_method[1] < rest_baseline:
+            improvement = ((rest_baseline - best_method[1]) / rest_baseline) * 100
+            print(f"   {improvement:.1f}% faster than REST API")
+
+        print("\n💡 Recommendations:")
+        print("   - Use 'minimal' fields for listings and searches")
+        print("   - Use 'basic' or 'standard' for display pages")
+        print("   - Use 'full' only when all fields are needed")
+        print("   - GraphQL allows requesting exactly what you need, reducing data transfer")
+
+        print("\n✓ Performance benchmark completed successfully!")
+        return True
+
+    except Exception as e:
+        print(f"\n❌ Error during benchmark: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -797,6 +1078,13 @@ def main():
 
     # Fetch WB transgenes
     success = fetch_wb_transgenes(client, limit=LIMIT, verbose=True)
+    all_successful = all_successful and success
+
+    # Test GraphQL API
+    success = test_graphql_genes(client, limit=LIMIT, verbose=True)
+    all_successful = all_successful and success
+
+    success = test_graphql_alleles(client, limit=LIMIT, verbose=True)
     all_successful = all_successful and success
 
     # Summary

@@ -25,6 +25,11 @@ from .models import (
     SlotAnnotation,
     AffectedGenomicModel,
 )
+from .graphql_queries import (
+    GraphQLQueryBuilder,
+    FieldSelector,
+    build_graphql_params,
+)
 
 __version__ = "0.1.0"
 __all__ = [
@@ -46,4 +51,7 @@ __all__ = [
     "DataProvider",
     "SlotAnnotation",
     "AffectedGenomicModel",
+    "GraphQLQueryBuilder",
+    "FieldSelector",
+    "build_graphql_params",
 ]
