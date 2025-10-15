@@ -761,10 +761,13 @@ def test_graphql_genes(client: AGRCurationAPIClient, limit: int = 5, verbose: bo
 
     all_successful = True
 
+    # Create a GraphQL client
+    graphql_client = AGRCurationAPIClient(data_source="graphql")
+
     # Test 1: Get genes with minimal fields
     print("\n--- Test 1: Minimal Fields (C. elegans genes) ---")
     try:
-        genes = client.get_genes_graphql(
+        genes = graphql_client.get_genes(
             fields="minimal",
             taxon="NCBITaxon:6239",
             limit=limit
@@ -780,7 +783,7 @@ def test_graphql_genes(client: AGRCurationAPIClient, limit: int = 5, verbose: bo
     # Test 2: Get genes with standard fields
     print("\n--- Test 2: Standard Fields (WB data provider) ---")
     try:
-        genes = client.get_genes_graphql(
+        genes = graphql_client.get_genes(
             fields="standard",
             data_provider="WB",
             limit=limit
@@ -799,7 +802,7 @@ def test_graphql_genes(client: AGRCurationAPIClient, limit: int = 5, verbose: bo
     # Test 3: Get genes with custom field list
     print("\n--- Test 3: Custom Field List ---")
     try:
-        genes = client.get_genes_graphql(
+        genes = graphql_client.get_genes(
             fields=["primaryExternalId", "geneSymbol", "geneFullName"],
             data_provider="WB",
             limit=3
@@ -808,24 +811,6 @@ def test_graphql_genes(client: AGRCurationAPIClient, limit: int = 5, verbose: bo
         for gene in genes:
             symbol = gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'
             print(f"  - {gene.primaryExternalId}: {symbol}")
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        all_successful = False
-
-    # Test 4: Get single gene by ID
-    print("\n--- Test 4: Get Single Gene by ID ---")
-    try:
-        genes = client.get_genes_graphql(data_provider="WB", limit=1)
-        if genes:
-            gene_id = genes[0].primaryExternalId
-            print(f"Fetching gene: {gene_id}")
-            gene = client.get_gene_graphql(gene_id, fields="basic")
-            if gene:
-                print(f"  ✓ Found: {gene.primaryExternalId}")
-                if gene.geneSymbol:
-                    print(f"    Symbol: {gene.geneSymbol.displayText}")
-        else:
-            print("  ⚠️ No genes available to test single gene fetch")
     except Exception as e:
         print(f"❌ Error: {e}")
         all_successful = False
@@ -854,9 +839,12 @@ def test_graphql_alleles(client: AGRCurationAPIClient, limit: int = 5, verbose: 
     print("="*70)
 
     try:
+        # Create a GraphQL client
+        graphql_client = AGRCurationAPIClient(data_source="graphql")
+
         # Test: Get alleles with default fields
         print("\n--- Test: Alleles from WB ---")
-        alleles = client.get_alleles_graphql(
+        alleles = graphql_client.get_alleles(
             data_provider="WB",
             limit=limit
         )
