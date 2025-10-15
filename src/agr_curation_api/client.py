@@ -10,17 +10,22 @@ import json
 import logging
 import urllib.request
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List, Union, Type, Literal
-from types import TracebackType
 from enum import Enum
+from types import TracebackType
+from typing import Optional, Dict, Any, List, Union, Type
 
-from pydantic import ValidationError
 from fastapi_okta.okta_utils import get_authentication_token, generate_headers
 
+from .api_methods import APIMethods
+from .db_methods import DatabaseMethods, DatabaseConfig
+from .exceptions import (
+    AGRAPIError,
+    AGRAuthenticationError,
+)
+from .graphql_methods import GraphQLMethods
 from .models import (
     APIConfig,
     Gene,
-    Species,
     NCBITaxonTerm,
     OntologyTerm,
     ExpressionAnnotation,
@@ -28,14 +33,6 @@ from .models import (
     APIResponse,
     AffectedGenomicModel,
 )
-from .exceptions import (
-    AGRAPIError,
-    AGRAuthenticationError,
-    AGRValidationError,
-)
-from .api_methods import APIMethods
-from .graphql_methods import GraphQLMethods
-from .db_methods import DatabaseMethods, DatabaseConfig
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +301,7 @@ class AGRCurationAPIClient:
         offset: Optional[int] = None,
         updated_after: Optional[Union[str, datetime]] = None,
         fields: Union[str, List[str], None] = None,
+        include_obsolete: bool = False,
         data_source: Optional[Union[DataSource, str]] = None,
         **kwargs
     ) -> List[Gene]:
@@ -317,6 +315,7 @@ class AGRCurationAPIClient:
             offset: Number of results to skip (DB only)
             updated_after: Filter for entities updated after this date (API only)
             fields: Field specification (GraphQL only)
+            include_obsolete: If False, filter out obsolete genes (default: False, API/DB only)
             data_source: Override default data source for this call
             **kwargs: Additional parameters for GraphQL
 
@@ -340,7 +339,8 @@ class AGRCurationAPIClient:
             return self._get_db_methods().get_genes_by_taxon(
                 taxon_curie=taxon,
                 limit=limit,
-                offset=offset
+                offset=offset,
+                include_obsolete=include_obsolete
             )
         else:  # API
             return self._api_methods.get_genes(
@@ -348,6 +348,7 @@ class AGRCurationAPIClient:
                 limit=limit,
                 page=page,
                 updated_after=updated_after,
+                include_obsolete=include_obsolete,
                 _apply_data_provider_filter=self._apply_data_provider_filter,
                 _apply_date_sorting=self._apply_date_sorting,
                 _filter_by_date=self._filter_by_date
@@ -590,51 +591,4 @@ class AGRCurationAPIClient:
             page=page,
             updated_after=updated_after,
             _apply_date_sorting=self._apply_date_sorting
-        )
-
-    # Legacy methods for backward compatibility (delegate to REST API methods)
-    def get_genes_graphql(
-        self,
-        fields: Union[str, List[str], None] = None,
-        data_provider: Optional[str] = None,
-        taxon: Optional[str] = None,
-        limit: int = 5000,
-        page: int = 0,
-        **filter_params
-    ) -> List[Gene]:
-        """Get genes using GraphQL API (legacy method for backward compatibility)."""
-        return self._graphql_methods.get_genes(
-            fields=fields,
-            data_provider=data_provider,
-            taxon=taxon,
-            limit=limit,
-            page=page,
-            **filter_params
-        )
-
-    def get_gene_graphql(
-        self,
-        gene_id: str,
-        fields: Union[str, List[str], None] = None
-    ) -> Optional[Gene]:
-        """Get a specific gene by ID using GraphQL (legacy method)."""
-        return self._graphql_methods.get_gene(gene_id, fields=fields)
-
-    def get_alleles_graphql(
-        self,
-        fields: Union[str, List[str], None] = None,
-        data_provider: Optional[str] = None,
-        taxon: Optional[str] = None,
-        limit: int = 5000,
-        page: int = 0,
-        **filter_params
-    ) -> List[Allele]:
-        """Get alleles using GraphQL API (legacy method for backward compatibility)."""
-        return self._graphql_methods.get_alleles(
-            fields=fields,
-            data_provider=data_provider,
-            taxon=taxon,
-            limit=limit,
-            page=page,
-            **filter_params
         )

@@ -47,6 +47,7 @@ class APIMethods:
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
+        include_obsolete: bool = False,
         _apply_data_provider_filter=None,
         _apply_date_sorting=None,
         _filter_by_date=None
@@ -58,6 +59,7 @@ class APIMethods:
             limit: Number of results per page
             page: Page number (0-based)
             updated_after: Filter for entities updated after this date (ISO format string or datetime)
+            include_obsolete: If False, filter out obsolete genes (default: False)
             _apply_data_provider_filter: Helper function for applying data provider filter
             _apply_date_sorting: Helper function for applying date sorting
             _filter_by_date: Helper function for filtering by date
@@ -71,6 +73,14 @@ class APIMethods:
         if _apply_date_sorting:
             _apply_date_sorting(req_data, updated_after)
 
+        # Add sorting by primaryExternalId to ensure consistent ordering across pages
+        req_data["sortOrders"] = [
+            {
+                "field": "primaryExternalId",
+                "order": 1
+            }
+        ]
+
         url = f"gene/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)
 
@@ -79,6 +89,9 @@ class APIMethods:
             for gene_data in response_data["results"]:
                 try:
                     gene = Gene(**gene_data)
+                    # Filter obsolete genes if requested
+                    if not include_obsolete and gene.obsolete:
+                        continue
                     genes.append(gene)
                 except ValidationError as e:
                     logger.warning(f"Failed to parse gene data: {e}")

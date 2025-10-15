@@ -74,7 +74,8 @@ class DatabaseMethods:
         self,
         taxon_curie: str,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        include_obsolete: bool = False
     ) -> List[Gene]:
         """Get genes from the database by taxon.
 
@@ -85,6 +86,7 @@ class DatabaseMethods:
             taxon_curie: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239')
             limit: Maximum number of genes to return
             offset: Number of genes to skip (for pagination)
+            include_obsolete: If False, filter out obsolete genes (default: False)
 
         Returns:
             List of Gene objects with basic information
@@ -95,7 +97,14 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            # Build WHERE clause based on include_obsolete parameter
+            obsolete_filter = "" if include_obsolete else """
+                slota.obsolete = false
+            AND
+                be.obsolete = false
+            AND"""
+
+            sql_query = text(f"""
             SELECT
                 be.primaryexternalid as "primaryExternalId",
                 slota.displaytext as geneSymbol
@@ -104,10 +113,7 @@ class DatabaseMethods:
                 JOIN slotannotation slota ON be.id = slota.singlegene_id
                 JOIN ontologyterm taxon ON be.taxon_id = taxon.id
             WHERE
-                slota.obsolete = false
-            AND
-                be.obsolete = false
-            AND
+                {obsolete_filter}
                 slota.slotannotationtype = 'GeneSymbolSlotAnnotation'
             AND
                 taxon.curie = :species_taxon
