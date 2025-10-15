@@ -54,7 +54,8 @@ class FieldSelector:
         "minimal": [
             "primaryExternalId",
             "curie",
-            "geneSymbol"
+            "geneSymbol",
+            "obsolete"
         ],
         "basic": [
             "primaryExternalId",

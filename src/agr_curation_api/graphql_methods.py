@@ -38,6 +38,7 @@ class GraphQLMethods:
         taxon: Optional[str] = None,
         limit: int = 5000,
         page: int = 0,
+        include_obsolete: bool = False,
         **filter_params
     ) -> List[Gene]:
         """Get genes using GraphQL API with flexible field selection.
@@ -57,6 +58,7 @@ class GraphQLMethods:
             taxon: Filter by taxon CURIE (e.g., 'NCBITaxon:6239' for C. elegans)
             limit: Number of results per page
             page: Page number (0-based)
+            include_obsolete: If False, filter out obsolete genes (default: False)
             **filter_params: Additional filter parameters (key=value pairs)
 
         Returns:
@@ -100,6 +102,9 @@ class GraphQLMethods:
             for gene_data in results:
                 try:
                     gene = Gene(**gene_data)
+                    # Client-side filter as safety (in case server-side filter doesn't work)
+                    if not include_obsolete and hasattr(gene, 'obsolete') and gene.obsolete:
+                        continue
                     genes.append(gene)
                 except ValidationError as e:
                     logger.warning(f"Failed to parse gene data from GraphQL: {e}")
