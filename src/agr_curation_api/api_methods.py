@@ -44,11 +44,13 @@ class APIMethods:
     def get_genes(
         self,
         data_provider: Optional[str] = None,
+        taxon: Optional[str] = None,
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
         include_obsolete: bool = False,
         _apply_data_provider_filter=None,
+        _apply_taxon_filter=None,
         _apply_date_sorting=None,
         _filter_by_date=None
     ) -> List[Gene]:
@@ -56,11 +58,13 @@ class APIMethods:
 
         Args:
             data_provider: Filter by data provider abbreviation (e.g., 'WB', 'MGI')
+            taxon: Filter by taxon CURIE (e.g., 'NCBITaxon:6239')
             limit: Number of results per page
             page: Page number (0-based)
             updated_after: Filter for entities updated after this date (ISO format string or datetime)
             include_obsolete: If False, filter out obsolete genes (default: False)
             _apply_data_provider_filter: Helper function for applying data provider filter
+            _apply_taxon_filter: Helper function for applying taxon filter
             _apply_date_sorting: Helper function for applying date sorting
             _filter_by_date: Helper function for filtering by date
 
@@ -70,16 +74,10 @@ class APIMethods:
         req_data: Dict[str, Any] = {}
         if _apply_data_provider_filter:
             _apply_data_provider_filter(req_data, data_provider)
+        if _apply_taxon_filter:
+            _apply_taxon_filter(req_data, taxon)
         if _apply_date_sorting:
             _apply_date_sorting(req_data, updated_after)
-
-        # Add sorting by primaryExternalId to ensure consistent ordering across pages
-        req_data["sortOrders"] = [
-            {
-                "field": "primaryExternalId",
-                "order": 1
-            }
-        ]
 
         url = f"gene/search?limit={limit}&page={page}"
         response_data = self._make_request("POST", url, req_data)

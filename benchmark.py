@@ -25,7 +25,7 @@ def fetch_all_genes_paginated(client: AGRCurationAPIClient, page_size: int = 100
     page = 0
 
     while True:
-        genes = client.get_genes(data_provider="WB", limit=page_size, page=page, include_obsolete=False)
+        genes = client.get_genes(taxon="NCBITaxon:6239", limit=page_size, page=page, include_obsolete=False)
         if not genes:
             break
         all_genes.extend(genes)
@@ -49,7 +49,7 @@ def fetch_all_genes_paginated_graphql(client: AGRCurationAPIClient, fields: str,
     page = 0
 
     while True:
-        genes = client.get_genes(taxon="NCBITaxon:6239", limit=page_size, page=page, fields=fields)
+        genes = client.get_genes(taxon="NCBITaxon:6239", limit=page_size, page=page, fields=fields, include_obsolete=False)
         if not genes:
             break
         all_genes.extend(genes)
@@ -72,8 +72,8 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
     print("PERFORMANCE BENCHMARK: REST API vs GraphQL vs Database")
     print("="*70)
     print(f"Configuration: {limit} records, {runs} runs per test")
-    print(f"Testing with WB (WormBase) genes")
-    print(f"Note: REST API uses data_provider='WB', GraphQL/DB use taxon='NCBITaxon:6239'")
+    print(f"Testing with C. elegans genes (NCBITaxon:6239)")
+    print(f"Note: All methods now use taxon='NCBITaxon:6239' for consistent comparison")
 
     results = {}
     gene_counts = {}  # Track gene counts per method for validation
@@ -103,13 +103,13 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
         db_client = None
 
     try:
-        # Test 1: REST API (all fields) - uses data_provider since REST API doesn't support taxon filtering
-        print("\n--- Test 1: REST API (all fields, WB genes) ---")
+        # Test 1: REST API (all fields) - now uses taxon filter for consistency
+        print("\n--- Test 1: REST API (all fields, C. elegans genes) ---")
         rest_times = []
         genes_sample = None
         for run in range(runs):
             start = time.time()
-            genes = api_client.get_genes(data_provider="WB", limit=limit, include_obsolete=False)
+            genes = api_client.get_genes(taxon="NCBITaxon:6239", limit=limit, include_obsolete=False)
             elapsed = time.time() - start
             rest_times.append(elapsed)
             if run == 0:
@@ -129,7 +129,8 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
             genes = graphql_client.get_genes(
                 taxon="NCBITaxon:6239",
                 limit=limit,
-                fields="minimal"
+                fields="minimal",
+                include_obsolete=False
             )
             elapsed = time.time() - start
             minimal_times.append(elapsed)
@@ -147,7 +148,8 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
             genes = graphql_client.get_genes(
                 taxon="NCBITaxon:6239",
                 limit=limit,
-                fields="basic"
+                fields="basic",
+                include_obsolete=False
             )
             elapsed = time.time() - start
             basic_times.append(elapsed)
@@ -165,7 +167,8 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
             genes = graphql_client.get_genes(
                 taxon="NCBITaxon:6239",
                 limit=limit,
-                fields="standard"
+                fields="standard",
+                include_obsolete=False
             )
             elapsed = time.time() - start
             standard_times.append(elapsed)
@@ -183,7 +186,8 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
             genes = graphql_client.get_genes(
                 taxon="NCBITaxon:6239",
                 limit=limit,
-                fields="full"
+                fields="full",
+                include_obsolete=False
             )
             elapsed = time.time() - start
             full_times.append(elapsed)
@@ -276,8 +280,9 @@ def benchmark_pagination_strategies(page_size: int = 1000):
     print("\n" + "="*70)
     print("PAGINATION STRATEGY BENCHMARK: Single Request vs Paginated")
     print("="*70)
-    print(f"Goal: Fetch ALL WB genes")
+    print(f"Goal: Fetch ALL C. elegans genes (NCBITaxon:6239)")
     print(f"Paginated approach uses page_size={page_size}")
+    print(f"Note: All methods use taxon='NCBITaxon:6239' for consistent comparison")
 
     results = {}
     gene_counts = {}  # Track gene counts per method
@@ -307,7 +312,7 @@ def benchmark_pagination_strategies(page_size: int = 1000):
         # Test 1: REST API - Single large request
         print("\n--- Test 1: REST API (single request, limit=100000) ---")
         start = time.time()
-        genes_rest_single = api_client.get_genes(data_provider="WB", limit=100000, include_obsolete=False)
+        genes_rest_single = api_client.get_genes(taxon="NCBITaxon:6239", limit=100000, include_obsolete=False)
         elapsed = time.time() - start
         results['REST API (single)'] = elapsed
         gene_counts['REST API (single)'] = len(genes_rest_single)
@@ -326,7 +331,7 @@ def benchmark_pagination_strategies(page_size: int = 1000):
         # Test 3: GraphQL minimal - Single large request
         print("\n--- Test 3: GraphQL minimal (single request, limit=100000) ---")
         start = time.time()
-        genes_gql_single = graphql_client.get_genes(taxon="NCBITaxon:6239", limit=100000, fields="minimal")
+        genes_gql_single = graphql_client.get_genes(taxon="NCBITaxon:6239", limit=100000, fields="minimal", include_obsolete=False)
         elapsed = time.time() - start
         results['GraphQL minimal (single)'] = elapsed
         gene_counts['GraphQL minimal (single)'] = len(genes_gql_single)
@@ -367,8 +372,8 @@ def benchmark_pagination_strategies(page_size: int = 1000):
             print("⚠️  WARNING: Gene counts are INCONSISTENT across methods!")
             print("   This may indicate:")
             print("   - API/GraphQL has internal limits")
-            print("   - Different filtering behavior (data_provider vs taxon)")
             print("   - Database contains different data than API")
+            print("   - Server-side pagination or result limits")
             print("\n   Detailed counts:")
             for method, count in gene_counts.items():
                 print(f"   {method:<40} {count:>6} genes")

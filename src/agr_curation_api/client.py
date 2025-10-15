@@ -149,6 +149,24 @@ class AGRCurationAPIClient:
                 }
             }
 
+    def _apply_taxon_filter(
+        self,
+        req_data: Dict[str, Any],
+        taxon: Optional[str],
+        field_name: str = "taxon.curie"
+    ) -> None:
+        """Apply taxon filter to request data."""
+        if taxon:
+            if "searchFilters" not in req_data:
+                req_data["searchFilters"] = {}
+
+            req_data["searchFilters"]["taxonFilter"] = {
+                field_name: {
+                    "queryString": taxon,
+                    "tokenOperator": "OR"
+                }
+            }
+
     def _apply_date_sorting(
         self,
         req_data: Dict[str, Any],
@@ -308,19 +326,24 @@ class AGRCurationAPIClient:
         """Get genes using the configured or specified data source.
 
         Args:
-            data_provider: Filter by data provider abbreviation (API/GraphQL only)
-            taxon: Filter by taxon CURIE (GraphQL/DB)
+            data_provider: Filter by data provider abbreviation (API/GraphQL)
+            taxon: Filter by taxon CURIE (e.g., 'NCBITaxon:6239' for C. elegans) (API/GraphQL/DB)
             limit: Number of results per page
             page: Page number (0-based, API/GraphQL only)
             offset: Number of results to skip (DB only)
             updated_after: Filter for entities updated after this date (API only)
             fields: Field specification (GraphQL only)
-            include_obsolete: If False, filter out obsolete genes (default: False, API/DB only)
+            include_obsolete: If False, filter out obsolete genes (default: False)
             data_source: Override default data source for this call
             **kwargs: Additional parameters for GraphQL
 
         Returns:
             List of Gene objects
+
+        Note:
+            - API can filter by both data_provider (MOD abbreviation) and taxon (species)
+            - GraphQL/DB filter by taxon to get consistent results across data sources
+            - For C. elegans: use taxon="NCBITaxon:6239" OR data_provider="WB"
         """
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
@@ -331,6 +354,7 @@ class AGRCurationAPIClient:
                 taxon=taxon,
                 limit=limit,
                 page=page,
+                include_obsolete=include_obsolete,
                 **kwargs
             )
         elif source == DataSource.DATABASE:
@@ -345,11 +369,13 @@ class AGRCurationAPIClient:
         else:  # API
             return self._api_methods.get_genes(
                 data_provider=data_provider,
+                taxon=taxon,
                 limit=limit,
                 page=page,
                 updated_after=updated_after,
                 include_obsolete=include_obsolete,
                 _apply_data_provider_filter=self._apply_data_provider_filter,
+                _apply_taxon_filter=self._apply_taxon_filter,
                 _apply_date_sorting=self._apply_date_sorting,
                 _filter_by_date=self._filter_by_date
             )
