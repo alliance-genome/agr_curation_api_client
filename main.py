@@ -873,11 +873,10 @@ def test_graphql_alleles(client: AGRCurationAPIClient, limit: int = 5, verbose: 
         return False
 
 
-def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, runs: int = 3):
-    """Benchmark REST API vs GraphQL with different field sets.
+def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
+    """Benchmark REST API vs GraphQL vs Database with different field sets.
 
     Args:
-        client: AGR API client instance
         limit: Number of records to fetch per test
         runs: Number of times to run each test for averaging
 
@@ -885,20 +884,45 @@ def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, ru
         bool: True if successful, False otherwise
     """
     print("\n" + "="*70)
-    print("PERFORMANCE BENCHMARK: REST API vs GraphQL")
+    print("PERFORMANCE BENCHMARK: REST API vs GraphQL vs Database")
     print("="*70)
     print(f"Configuration: {limit} records, {runs} runs per test")
     print(f"Testing with WB (WormBase) genes")
+    print(f"Note: REST API uses data_provider='WB', GraphQL/DB use taxon='NCBITaxon:6239'")
 
     results = {}
+    db_available = True
+
+    # Create clients for each data source
+    api_client = AGRCurationAPIClient(data_source="api")
+    graphql_client = AGRCurationAPIClient(data_source="graphql")
+
+    # Try to create database client and test it
+    try:
+        db_client = AGRCurationAPIClient(data_source="db")
+        # Test if database is actually accessible by trying a minimal query
+        print("\nTesting database connectivity...")
+        test_genes = db_client.get_genes(taxon="NCBITaxon:6239", limit=1)
+        if not test_genes:
+            print("⚠️  Database returned no results - may not be configured correctly")
+            print("   Skipping database tests\n")
+            db_available = False
+            db_client = None
+        else:
+            print("✓ Database connection successful\n")
+    except Exception as e:
+        print(f"⚠️  Database client not available: {e}")
+        print("   Skipping database tests\n")
+        db_available = False
+        db_client = None
 
     try:
-        # Test 1: REST API (all fields)
-        print("\n--- Test 1: REST API (all fields) ---")
+        # Test 1: REST API (all fields) - uses data_provider since REST API doesn't support taxon filtering
+        print("\n--- Test 1: REST API (all fields, WB genes) ---")
         rest_times = []
         for run in range(runs):
             start = time.time()
-            genes = client.get_genes(data_provider="WB", limit=limit)
+            genes = api_client.get_genes(data_provider="WB", limit=limit)
             elapsed = time.time() - start
             rest_times.append(elapsed)
             print(f"  Run {run+1}: {elapsed:.3f}s ({len(genes)} genes)")
@@ -912,10 +936,10 @@ def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, ru
         minimal_times = []
         for run in range(runs):
             start = time.time()
-            genes = client.get_genes_graphql(
-                fields="minimal",
-                data_provider="WB",
-                limit=limit
+            genes = graphql_client.get_genes(
+                taxon="NCBITaxon:6239",
+                limit=limit,
+                fields="minimal"
             )
             elapsed = time.time() - start
             minimal_times.append(elapsed)
@@ -930,10 +954,10 @@ def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, ru
         basic_times = []
         for run in range(runs):
             start = time.time()
-            genes = client.get_genes_graphql(
-                fields="basic",
-                data_provider="WB",
-                limit=limit
+            genes = graphql_client.get_genes(
+                taxon="NCBITaxon:6239",
+                limit=limit,
+                fields="basic"
             )
             elapsed = time.time() - start
             basic_times.append(elapsed)
@@ -948,10 +972,10 @@ def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, ru
         standard_times = []
         for run in range(runs):
             start = time.time()
-            genes = client.get_genes_graphql(
-                fields="standard",
-                data_provider="WB",
-                limit=limit
+            genes = graphql_client.get_genes(
+                taxon="NCBITaxon:6239",
+                limit=limit,
+                fields="standard"
             )
             elapsed = time.time() - start
             standard_times.append(elapsed)
@@ -966,10 +990,10 @@ def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, ru
         full_times = []
         for run in range(runs):
             start = time.time()
-            genes = client.get_genes_graphql(
-                fields="full",
-                data_provider="WB",
-                limit=limit
+            genes = graphql_client.get_genes(
+                taxon="NCBITaxon:6239",
+                limit=limit,
+                fields="full"
             )
             elapsed = time.time() - start
             full_times.append(elapsed)
@@ -978,6 +1002,22 @@ def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, ru
         full_avg = sum(full_times) / len(full_times)
         results['GraphQL (full)'] = full_avg
         print(f"  Average: {full_avg:.3f}s")
+
+        # Test 6: Database (direct SQL) - equivalent to minimal fields
+        if db_available and db_client:
+            print("\n--- Test 6: Database (direct SQL, minimal fields) ---")
+            print("      Note: DB returns only ID + symbol (same as GraphQL minimal)")
+            db_times = []
+            for run in range(runs):
+                start = time.time()
+                genes = db_client.get_genes(taxon="NCBITaxon:6239", limit=limit)
+                elapsed = time.time() - start
+                db_times.append(elapsed)
+                print(f"  Run {run+1}: {elapsed:.3f}s ({len(genes)} genes)")
+
+            db_avg = sum(db_times) / len(db_times)
+            results['Database (SQL minimal)'] = db_avg
+            print(f"  Average: {db_avg:.3f}s")
 
         # Summary table
         print("\n" + "="*70)
@@ -1013,6 +1053,12 @@ def benchmark_rest_vs_graphql(client: AGRCurationAPIClient, limit: int = 100, ru
         print("   - Use 'basic' or 'standard' for display pages")
         print("   - Use 'full' only when all fields are needed")
         print("   - GraphQL allows requesting exactly what you need, reducing data transfer")
+        if db_available:
+            print("   - Database access returns minimal fields (ID + symbol) for maximum speed")
+            print("   - Compare Database vs GraphQL (minimal) for apples-to-apples comparison")
+            print("   - Use Database for bulk operations when you only need basic identifiers")
+        else:
+            print("   - Database access requires proper credentials (not available in this test)")
 
         print("\n✓ Performance benchmark completed successfully!")
         return True
