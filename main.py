@@ -1066,12 +1066,13 @@ def main():
     print(f"Base URL: {os.getenv('AGR_API_BASE_URL', 'https://api.alliancegenome.org')}")
     print(f"Fetching: all entities")
     print(f"Limit: 10 items per type")
-    
-    # Setup client
+    print(f"Data Source: REST API (explicitly set)")
+
+    # Setup client - explicitly use API for all non-GraphQL calls
     try:
         config = APIConfig()
-        client = AGRCurationAPIClient(config)
-        print("\n✓ Client initialized successfully")
+        client = AGRCurationAPIClient(config, data_source="api")
+        print("\n✓ Client initialized successfully with REST API")
     except Exception as e:
         print(f"\n✗ Failed to initialize client: {e}")
         return 1

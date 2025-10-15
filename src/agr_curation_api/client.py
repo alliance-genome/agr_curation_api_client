@@ -47,26 +47,29 @@ class DataSource(str, Enum):
 class AGRCurationAPIClient:
     """Client for interacting with AGR A-Team Curation API.
 
-    This client supports multiple data access methods:
-    - REST API (default): Full-featured API with all entity types
+    This client supports multiple data access methods with automatic fallback:
+    - Database: Direct SQL queries for high-performance bulk access (fastest)
     - GraphQL: Efficient queries with flexible field selection
-    - Database: Direct SQL queries for high-performance bulk access
+    - REST API: Full-featured API with all entity types (fallback)
+
+    When no data source is specified, the client automatically tries to use
+    the fastest available source in order: db -> graphql -> api
 
     Args:
         config: API configuration object, dictionary, or None for defaults
-        data_source: Primary data source to use ('api', 'graphql', or 'db')
-            Default is 'api'. Can be overridden per method call.
+        data_source: Primary data source to use ('api', 'graphql', 'db', or None).
+            If None, auto-detects the best available source. Can be overridden per method call.
 
     Example:
-        # Use REST API (default)
+        # Auto-detect best available data source (db -> graphql -> api)
         client = AGRCurationAPIClient()
-        genes = client.get_genes(data_provider="WB", limit=10)
+        genes = client.get_genes(taxon="NCBITaxon:6239", limit=10)
 
-        # Use GraphQL for all requests
+        # Force use of GraphQL for all requests
         client = AGRCurationAPIClient(data_source="graphql")
         genes = client.get_genes(data_provider="WB", limit=10)
 
-        # Use direct database access
+        # Force use of direct database access
         client = AGRCurationAPIClient(data_source="db")
         genes = client.get_genes(taxon="NCBITaxon:6239", limit=100)
     """
@@ -74,13 +77,14 @@ class AGRCurationAPIClient:
     def __init__(
         self,
         config: Union[APIConfig, Dict[str, Any], None] = None,
-        data_source: Union[DataSource, str] = DataSource.API
+        data_source: Union[DataSource, str, None] = None
     ):
         """Initialize the API client.
 
         Args:
             config: API configuration object, dictionary, or None for defaults
-            data_source: Primary data source ('api', 'graphql', or 'db')
+            data_source: Primary data source ('api', 'graphql', or 'db').
+                If None, automatically tries db -> graphql -> api in order.
         """
         if config is None:
             config = APIConfig()  # type: ignore[call-arg]
@@ -90,11 +94,6 @@ class AGRCurationAPIClient:
         self.config = config
         self.base_url = str(self.config.base_url)
 
-        # Convert string to enum if needed
-        if isinstance(data_source, str):
-            data_source = DataSource(data_source.lower())
-        self.data_source = data_source
-
         # Initialize authentication token if not provided
         if not self.config.okta_token:
             self.config.okta_token = get_authentication_token()
@@ -103,6 +102,57 @@ class AGRCurationAPIClient:
         self._api_methods = APIMethods(self._make_request)
         self._graphql_methods = GraphQLMethods(self._make_graphql_request)
         self._db_methods = None  # Lazy initialization
+
+        # Auto-detect data source if not specified
+        if data_source is None:
+            self.data_source = self._auto_detect_data_source()
+        else:
+            # Convert string to enum if needed
+            if isinstance(data_source, str):
+                data_source = DataSource(data_source.lower())
+            self.data_source = data_source
+
+    def _auto_detect_data_source(self) -> DataSource:
+        """Auto-detect the best available data source.
+
+        Tries in order: db -> graphql -> api
+
+        Returns:
+            DataSource enum for the first available source
+        """
+        # Try database first
+        try:
+            db_methods = self._get_db_methods()
+            # Test with a minimal query
+            test_genes = db_methods.get_genes_by_taxon(
+                taxon_curie="NCBITaxon:6239",
+                limit=1,
+                include_obsolete=False
+            )
+            if test_genes:
+                logger.info("Auto-detected data source: database")
+                return DataSource.DATABASE
+        except Exception as e:
+            logger.debug(f"Database not available: {e}")
+
+        # Try GraphQL next
+        try:
+            # Test with a minimal GraphQL query
+            test_genes = self._graphql_methods.get_genes(
+                fields="minimal",
+                taxon="NCBITaxon:6239",
+                limit=1,
+                include_obsolete=False
+            )
+            if test_genes:
+                logger.info("Auto-detected data source: GraphQL")
+                return DataSource.GRAPHQL
+        except Exception as e:
+            logger.debug(f"GraphQL not available: {e}")
+
+        # Fall back to API (should always work)
+        logger.info("Auto-detected data source: REST API")
+        return DataSource.API
 
     def _get_db_methods(self) -> DatabaseMethods:
         """Get or create database methods instance (lazy initialization)."""
@@ -456,11 +506,7 @@ class AGRCurationAPIClient:
                     offset=offset
                 )
             elif data_provider:
-                return db_methods.get_alleles_by_data_provider(
-                    data_provider=data_provider,
-                    limit=limit,
-                    offset=offset
-                )
+                raise AGRAPIError("Database queries by data_provider not supported")
             else:
                 raise AGRAPIError("Either taxon or data_provider is required for database queries")
         else:  # API
