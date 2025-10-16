@@ -7,6 +7,7 @@ adapted from agr_genedescriptions/pipelines/alliance/ateam_db_helper.py
 import logging
 from os import environ
 from typing import List, Optional, Dict, Any
+from sqlalchemy.engine import Engine
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 class DatabaseConfig:
     """Configuration for database connection."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize database configuration from environment variables."""
         self.username = environ.get('PERSISTENT_STORE_DB_USERNAME', 'unknown')
         self.password = environ.get('PERSISTENT_STORE_DB_PASSWORD', 'unknown')
@@ -38,23 +39,23 @@ class DatabaseConfig:
 class DatabaseMethods:
     """Direct database access methods for AGR entities."""
 
-    def __init__(self, config: Optional[DatabaseConfig] = None):
+    def __init__(self, config: Optional[DatabaseConfig] = None) -> None:
         """Initialize database methods.
 
         Args:
             config: Database configuration (defaults to environment variables)
         """
         self.config = config or DatabaseConfig()
-        self._engine = None
-        self._session_factory = None
+        self._engine: Optional[Engine] = None
+        self._session_factory: Optional[sessionmaker[Session]] = None
 
-    def _get_engine(self):
+    def _get_engine(self) -> Engine:
         """Get or create database engine."""
         if self._engine is None:
             self._engine = create_engine(self.config.connection_string)
         return self._engine
 
-    def _get_session_factory(self):
+    def _get_session_factory(self) -> sessionmaker[Session]:
         """Get or create session factory."""
         if self._session_factory is None:
             engine = self._get_engine()
@@ -755,7 +756,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def close(self):
+    def close(self) -> None:
         """Close database connections."""
         if self._engine:
             self._engine.dispose()

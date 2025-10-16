@@ -5,7 +5,7 @@ This module contains methods that interact with the AGR Curation REST API endpoi
 
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Callable
 
 from pydantic import ValidationError
 
@@ -31,7 +31,7 @@ class APIMethods:
     the actual HTTP communication.
     """
 
-    def __init__(self, make_request_func):
+    def __init__(self, make_request_func: Callable[..., Dict[str, Any]]) -> None:
         """Initialize API methods.
 
         Args:
@@ -49,10 +49,10 @@ class APIMethods:
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
         include_obsolete: bool = False,
-        _apply_data_provider_filter=None,
-        _apply_taxon_filter=None,
-        _apply_date_sorting=None,
-        _filter_by_date=None
+        _apply_data_provider_filter: Optional[Callable[..., None]] = None,
+        _apply_taxon_filter: Optional[Callable[..., None]] = None,
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
+        _filter_by_date: Optional[Callable[..., Any]] = None
     ) -> List[Gene]:
         """Get genes from REST API.
 
@@ -121,8 +121,8 @@ class APIMethods:
         limit: int = 100,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        _apply_date_sorting=None,
-        _filter_by_date=None
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
+        _filter_by_date: Optional[Callable[..., Any]] = None
     ) -> List[NCBITaxonTerm]:
         """Get species data from REST API using NCBITaxonTerm endpoint.
 
@@ -165,8 +165,8 @@ class APIMethods:
         limit: int = 100,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        _apply_date_sorting=None,
-        _filter_by_date=None
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
+        _filter_by_date: Optional[Callable[..., Any]] = None
     ) -> List[NCBITaxonTerm]:
         """Get NCBI Taxon terms from REST API.
 
@@ -258,9 +258,9 @@ class APIMethods:
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        _apply_data_provider_filter=None,
-        _apply_date_sorting=None,
-        _filter_by_date=None
+        _apply_data_provider_filter: Optional[Callable[..., None]] = None,
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
+        _filter_by_date: Optional[Callable[..., Any]] = None
     ) -> List[ExpressionAnnotation]:
         """Get expression annotations from REST API.
 
@@ -312,9 +312,9 @@ class APIMethods:
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
         transgenes_only: bool = False,
-        _apply_data_provider_filter=None,
-        _apply_date_sorting=None,
-        _filter_by_date=None
+        _apply_data_provider_filter: Optional[Callable[..., None]] = None,
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
+        _filter_by_date: Optional[Callable[..., Any]] = None
     ) -> List[Allele]:
         """Get alleles from REST API.
 
@@ -393,9 +393,9 @@ class APIMethods:
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        _apply_data_provider_filter=None,
-        _apply_date_sorting=None,
-        _filter_by_date=None
+        _apply_data_provider_filter: Optional[Callable[..., None]] = None,
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
+        _filter_by_date: Optional[Callable[..., Any]] = None
     ) -> List[AffectedGenomicModel]:
         """Get Affected Genomic Models (AGMs) from REST API.
 
@@ -466,9 +466,9 @@ class APIMethods:
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        _apply_data_provider_filter=None,
-        _apply_date_sorting=None,
-        _filter_by_date=None
+        _apply_data_provider_filter: Optional[Callable[..., None]] = None,
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
+        _filter_by_date: Optional[Callable[..., Any]] = None
     ) -> List[AffectedGenomicModel]:
         """Get zebrafish AGMs from REST API.
 
@@ -504,7 +504,7 @@ class APIMethods:
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        _apply_date_sorting=None
+        _apply_date_sorting: Optional[Callable[..., None]] = None
     ) -> APIResponse:
         """Generic search method for any entity type.
 

@@ -1,6 +1,6 @@
 """GraphQL query builder utilities for AGR Curation API."""
 
-from typing import List, Dict, Optional, Set, Union
+from typing import List, Dict, Optional, Set, Union, Any
 
 
 class FieldSelector:
@@ -311,7 +311,7 @@ class GraphQLQueryBuilder:
 def build_graphql_params(
     data_provider: Optional[str] = None,
     taxon: Optional[str] = None,
-    **kwargs
+    **kwargs: Any
 ) -> List[Dict[str, str]]:
     """Build GraphQL params list from common filters.
 

@@ -4,7 +4,7 @@ This module contains methods that interact with the AGR Curation GraphQL API.
 """
 
 import logging
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Any, Dict, Callable
 
 from pydantic import ValidationError
 
@@ -22,7 +22,7 @@ class GraphQLMethods:
     the actual HTTP communication.
     """
 
-    def __init__(self, make_graphql_request_func):
+    def __init__(self, make_graphql_request_func: Callable[[str], Dict[str, Any]]) -> None:
         """Initialize GraphQL methods.
 
         Args:
@@ -39,7 +39,7 @@ class GraphQLMethods:
         limit: int = 5000,
         page: int = 0,
         include_obsolete: bool = False,
-        **filter_params
+        **filter_params: Any
     ) -> List[Gene]:
         """Get genes using GraphQL API with flexible field selection.
 
@@ -153,7 +153,7 @@ class GraphQLMethods:
         taxon: Optional[str] = None,
         limit: int = 5000,
         page: int = 0,
-        **filter_params
+        **filter_params: Any
     ) -> List[Allele]:
         """Get alleles using GraphQL API with flexible field selection.
 
