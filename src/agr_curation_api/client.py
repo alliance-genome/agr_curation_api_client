@@ -415,37 +415,41 @@ class AGRCurationAPIClient:
         # If no data source specified, use fallback mechanism
         if source is None:
             # Define functions for each data source (or None if not applicable)
-            db_func = None
             if taxon:  # Database requires taxon
-                db_func = lambda: self._get_db_methods().get_genes_by_taxon(
-                    taxon_curie=taxon,
+                def db_func():
+                    return self._get_db_methods().get_genes_by_taxon(
+                        taxon_curie=taxon,
+                        limit=limit,
+                        offset=offset,
+                        include_obsolete=include_obsolete
+                    )
+            else:
+                db_func = None
+
+            def graphql_func():
+                return self._graphql_methods.get_genes(
+                    fields=fields,
+                    data_provider=data_provider,
+                    taxon=taxon,
                     limit=limit,
-                    offset=offset,
-                    include_obsolete=include_obsolete
+                    page=page,
+                    include_obsolete=include_obsolete,
+                    **kwargs
                 )
 
-            graphql_func = lambda: self._graphql_methods.get_genes(
-                fields=fields,
-                data_provider=data_provider,
-                taxon=taxon,
-                limit=limit,
-                page=page,
-                include_obsolete=include_obsolete,
-                **kwargs
-            )
-
-            api_func = lambda: self._api_methods.get_genes(
-                data_provider=data_provider,
-                taxon=taxon,
-                limit=limit,
-                page=page,
-                updated_after=updated_after,
-                include_obsolete=include_obsolete,
-                _apply_data_provider_filter=self._apply_data_provider_filter,
-                _apply_taxon_filter=self._apply_taxon_filter,
-                _apply_date_sorting=self._apply_date_sorting,
-                _filter_by_date=self._filter_by_date
-            )
+            def api_func():
+                return self._api_methods.get_genes(
+                    data_provider=data_provider,
+                    taxon=taxon,
+                    limit=limit,
+                    page=page,
+                    updated_after=updated_after,
+                    include_obsolete=include_obsolete,
+                    _apply_data_provider_filter=self._apply_data_provider_filter,
+                    _apply_taxon_filter=self._apply_taxon_filter,
+                    _apply_date_sorting=self._apply_date_sorting,
+                    _filter_by_date=self._filter_by_date
+                )
 
             return self._execute_with_fallback(db_func, graphql_func, api_func, "get_genes")
 
@@ -546,33 +550,37 @@ class AGRCurationAPIClient:
 
         # If no data source specified, use fallback mechanism
         if source is None:
-            db_func = None
             if taxon:  # Database requires taxon
-                db_func = lambda: self._get_db_methods().get_alleles_by_taxon(
-                    taxon_curie=taxon,
+                def db_func():
+                    return self._get_db_methods().get_alleles_by_taxon(
+                        taxon_curie=taxon,
+                        limit=limit,
+                        offset=offset
+                    )
+            else:
+                db_func = None
+
+            def graphql_func():
+                return self._graphql_methods.get_alleles(
+                    fields=fields,
+                    data_provider=data_provider,
+                    taxon=taxon,
                     limit=limit,
-                    offset=offset
+                    page=page,
+                    **kwargs
                 )
 
-            graphql_func = lambda: self._graphql_methods.get_alleles(
-                fields=fields,
-                data_provider=data_provider,
-                taxon=taxon,
-                limit=limit,
-                page=page,
-                **kwargs
-            )
-
-            api_func = lambda: self._api_methods.get_alleles(
-                data_provider=data_provider,
-                limit=limit,
-                page=page,
-                updated_after=updated_after,
-                transgenes_only=transgenes_only,
-                _apply_data_provider_filter=self._apply_data_provider_filter,
-                _apply_date_sorting=self._apply_date_sorting,
-                _filter_by_date=self._filter_by_date
-            )
+            def api_func():
+                return self._api_methods.get_alleles(
+                    data_provider=data_provider,
+                    limit=limit,
+                    page=page,
+                    updated_after=updated_after,
+                    transgenes_only=transgenes_only,
+                    _apply_data_provider_filter=self._apply_data_provider_filter,
+                    _apply_date_sorting=self._apply_date_sorting,
+                    _filter_by_date=self._filter_by_date
+                )
 
             return self._execute_with_fallback(db_func, graphql_func, api_func, "get_alleles")
 
@@ -704,21 +712,25 @@ class AGRCurationAPIClient:
 
         # If no data source specified, use fallback mechanism
         if source is None:
-            db_func = None
             if taxon:  # Database requires taxon
-                db_func = lambda: self._get_db_methods().get_expression_annotations(taxon_curie=taxon)
+                def db_func():
+                    return self._get_db_methods().get_expression_annotations(taxon_curie=taxon)
+            else:
+                db_func = None
 
-            api_func = None
             if data_provider:  # API requires data_provider
-                api_func = lambda: self._api_methods.get_expression_annotations(
-                    data_provider=data_provider,
-                    limit=limit,
-                    page=page,
-                    updated_after=updated_after,
-                    _apply_data_provider_filter=self._apply_data_provider_filter,
-                    _apply_date_sorting=self._apply_date_sorting,
-                    _filter_by_date=self._filter_by_date
-                )
+                def api_func():
+                    return self._api_methods.get_expression_annotations(
+                        data_provider=data_provider,
+                        limit=limit,
+                        page=page,
+                        updated_after=updated_after,
+                        _apply_data_provider_filter=self._apply_data_provider_filter,
+                        _apply_date_sorting=self._apply_date_sorting,
+                        _filter_by_date=self._filter_by_date
+                    )
+            else:
+                api_func = None
 
             return self._execute_with_fallback(db_func, None, api_func, "get_expression_annotations")
 
