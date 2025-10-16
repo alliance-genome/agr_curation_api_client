@@ -1058,6 +1058,107 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
         return False
 
 
+def test_database_methods(limit: int = 5):
+    """Test direct database access methods (requires database credentials).
+
+    Args:
+        limit: Maximum number of results to fetch
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("TESTING DATABASE METHODS")
+    print("="*70)
+
+    try:
+        # Create a database client
+        db_client = AGRCurationAPIClient(data_source="db")
+        print("✓ Database client initialized")
+    except Exception as e:
+        print(f"⚠️  Database client not available: {e}")
+        print("   Skipping database method tests\n")
+        return False
+
+    all_successful = True
+    taxon = "NCBITaxon:6239"  # C. elegans
+
+    # Test 1: Expression annotations
+    print("\n--- Test 1: Expression Annotations (C. elegans) ---")
+    try:
+        annotations = db_client.get_expression_annotations(taxon=taxon)
+        print(f"✓ Found {len(annotations)} expression annotations")
+        for ann in annotations[:limit]:
+            print(f"  - Gene: {ann['gene_symbol']} ({ann['gene_id']}) -> {ann['anatomy_id']}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    # Test 2: Data providers
+    print("\n--- Test 2: Data Providers ---")
+    try:
+        providers = db_client.get_data_providers()
+        print(f"✓ Found {len(providers)} data providers")
+        for species_name, taxon_curie in providers[:limit]:
+            print(f"  - {species_name}: {taxon_curie}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    # Test 3: Disease annotations
+    print("\n--- Test 3: Disease Annotations (C. elegans) ---")
+    try:
+        disease_annots = db_client.get_disease_annotations(taxon=taxon)
+        print(f"✓ Found {len(disease_annots)} disease annotations")
+        for ann in disease_annots[:limit]:
+            print(f"  - Gene: {ann['gene_symbol']} ({ann['gene_id']})")
+            print(f"    Disease: {ann['do_id']}, Type: {ann['relationship_type']}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    # Test 4: Ontology pairs
+    print("\n--- Test 4: Ontology Pairs (DOID) ---")
+    try:
+        pairs = db_client.get_ontology_pairs(curie_prefix="DOID")
+        print(f"✓ Found {len(pairs)} ontology term relationships")
+        for pair in pairs[:limit]:
+            print(f"  - {pair['parent_curie']} ({pair['rel_type']}) -> {pair['child_curie']}")
+            print(f"    Parent: {pair['parent_name']}")
+            print(f"    Child: {pair['child_name']}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    # Test 5: Human orthologs
+    print("\n--- Test 5: Best Human Orthologs (C. elegans) ---")
+    try:
+        orthologs = db_client.get_best_human_orthologs_for_taxon(taxon=taxon)
+        print(f"✓ Found orthologs for {len(orthologs)} genes")
+
+        # Show a few examples
+        count = 0
+        for gene_id, (ortholog_list, excluded) in orthologs.items():
+            if count >= limit:
+                break
+            print(f"  - {gene_id}:")
+            for ortho_id, ortho_symbol, ortho_full_name in ortholog_list[:2]:  # Show up to 2 orthologs
+                print(f"    -> {ortho_symbol} ({ortho_id})")
+            if excluded:
+                print(f"    (Some orthologs excluded)")
+            count += 1
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        all_successful = False
+
+    if all_successful:
+        print("\n✓ All database method tests completed successfully!")
+    else:
+        print("\n⚠️ Some database method tests failed")
+
+    return all_successful
+
+
 def main():
     # Print header
     print("="*70)
@@ -1120,6 +1221,10 @@ def main():
     all_successful = all_successful and success
 
     success = test_graphql_alleles(client, limit=LIMIT, verbose=True)
+    all_successful = all_successful and success
+
+    # Test database methods
+    success = test_database_methods(limit=LIMIT)
     all_successful = all_successful and success
 
     # Summary

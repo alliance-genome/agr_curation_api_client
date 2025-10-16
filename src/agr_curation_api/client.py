@@ -583,24 +583,48 @@ class AGRCurationAPIClient:
         """Get children of an ontology node."""
         return self._api_methods.get_ontology_node_children(node_curie, node_type)
 
-    # Expression annotation methods (API only)
+    # Expression annotation methods with data source routing
     def get_expression_annotations(
         self,
-        data_provider: str,
+        data_provider: Optional[str] = None,
+        taxon: Optional[str] = None,
         limit: int = 5000,
         page: int = 0,
-        updated_after: Optional[Union[str, datetime]] = None
-    ) -> List[ExpressionAnnotation]:
-        """Get expression annotations from A-Team API."""
-        return self._api_methods.get_expression_annotations(
-            data_provider=data_provider,
-            limit=limit,
-            page=page,
-            updated_after=updated_after,
-            _apply_data_provider_filter=self._apply_data_provider_filter,
-            _apply_date_sorting=self._apply_date_sorting,
-            _filter_by_date=self._filter_by_date
-        )
+        updated_after: Optional[Union[str, datetime]] = None,
+        data_source: Optional[Union[DataSource, str]] = None
+    ) -> Union[List[ExpressionAnnotation], List[Dict[str, str]]]:
+        """Get expression annotations using the configured or specified data source.
+
+        Args:
+            data_provider: Filter by data provider abbreviation (API only)
+            taxon: Filter by taxon CURIE (DB only, e.g., 'NCBITaxon:6239')
+            limit: Number of results per page (API only)
+            page: Page number (0-based, API only)
+            updated_after: Filter for entities updated after this date (API only)
+            data_source: Override default data source
+
+        Returns:
+            List of ExpressionAnnotation objects (API) or List of dictionaries (DB)
+            DB format: {"gene_id": str, "gene_symbol": str, "anatomy_id": str}
+        """
+        source = DataSource(data_source.lower()) if data_source else self.data_source
+
+        if source == DataSource.DATABASE:
+            if not taxon:
+                raise AGRAPIError("taxon parameter is required for database queries")
+            return self._get_db_methods().get_expression_annotations(taxon_curie=taxon)
+        else:  # API (GraphQL doesn't support expression annotations)
+            if not data_provider:
+                raise AGRAPIError("data_provider parameter is required for API queries")
+            return self._api_methods.get_expression_annotations(
+                data_provider=data_provider,
+                limit=limit,
+                page=page,
+                updated_after=updated_after,
+                _apply_data_provider_filter=self._apply_data_provider_filter,
+                _apply_date_sorting=self._apply_date_sorting,
+                _filter_by_date=self._filter_by_date
+            )
 
     # AGM methods (API only)
     def get_agms(
@@ -661,3 +685,82 @@ class AGRCurationAPIClient:
             updated_after=updated_after,
             _apply_date_sorting=self._apply_date_sorting
         )
+
+    # Ontology relationship methods (DB only)
+    def get_ontology_pairs(
+        self,
+        curie_prefix: str
+    ) -> List[Dict[str, Any]]:
+        """Get ontology term parent-child relationships from the database.
+
+        Args:
+            curie_prefix: Ontology CURIE prefix (e.g., 'DOID', 'GO')
+
+        Returns:
+            List of dictionaries containing parent-child ontology term relationships.
+            Each dict contains: parent_curie, parent_name, parent_type, parent_is_obsolete,
+            child_curie, child_name, child_type, child_is_obsolete, rel_type
+
+        Example:
+            pairs = client.get_ontology_pairs('DOID')
+        """
+        return self._get_db_methods().get_ontology_pairs(curie_prefix=curie_prefix)
+
+    # Data provider methods (DB only)
+    def get_data_providers(self) -> List[tuple]:
+        """Get data providers from the database.
+
+        Returns:
+            List of tuples containing (species_display_name, taxon_curie)
+
+        Example:
+            providers = client.get_data_providers()
+            # [('Caenorhabditis elegans', 'NCBITaxon:6239'), ...]
+        """
+        return self._get_db_methods().get_data_providers()
+
+    # Disease annotation methods (DB only)
+    def get_disease_annotations(
+        self,
+        taxon: str
+    ) -> List[Dict[str, str]]:
+        """Get disease annotations from the database.
+
+        This retrieves disease annotations from multiple sources:
+        - Direct: gene -> DO term (via genediseaseannotation)
+        - Indirect from allele: gene from inferredgene_id or asserted genes
+        - Indirect from AGM: gene from inferredgene_id or asserted genes
+        - Disease via orthology: gene -> DO term via human orthologs
+
+        Args:
+            taxon: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239' for C. elegans)
+
+        Returns:
+            List of dictionaries containing:
+            {"gene_id": str, "gene_symbol": str, "do_id": str, "relationship_type": str}
+
+        Example:
+            annotations = client.get_disease_annotations(taxon='NCBITaxon:6239')
+        """
+        return self._get_db_methods().get_disease_annotations(taxon_curie=taxon)
+
+    # Ortholog methods (DB only)
+    def get_best_human_orthologs_for_taxon(
+        self,
+        taxon: str
+    ) -> Dict[str, tuple]:
+        """Get the best human orthologs for all genes from a given species.
+
+        Args:
+            taxon: The taxon CURIE of the species (e.g., 'NCBITaxon:6239' for C. elegans)
+
+        Returns:
+            Dictionary mapping each gene ID to a tuple:
+            (list of best human orthologs, bool indicating if any orthologs were excluded)
+            Each ortholog is represented as a list: [ortholog_id, ortholog_symbol, ortholog_full_name]
+
+        Example:
+            orthologs = client.get_best_human_orthologs_for_taxon('NCBITaxon:6239')
+            # {'WBGene00000001': ([['HGNC:123', 'GENE1', 'Gene 1 full name']], False), ...}
+        """
+        return self._get_db_methods().get_best_human_orthologs_for_taxon(taxon_curie=taxon)
