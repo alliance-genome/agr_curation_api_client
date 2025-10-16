@@ -498,17 +498,14 @@ class AGRCurationAPIClient:
                 **kwargs
             )
         elif source == DataSource.DATABASE:
+            if not taxon:
+                raise AGRAPIError("taxon parameter is required for database queries")
             db_methods = self._get_db_methods()
-            if taxon:
-                return db_methods.get_alleles_by_taxon(
-                    taxon_curie=taxon,
-                    limit=limit,
-                    offset=offset
-                )
-            elif data_provider:
-                raise AGRAPIError("Database queries by data_provider not supported")
-            else:
-                raise AGRAPIError("Either taxon or data_provider is required for database queries")
+            return db_methods.get_alleles_by_taxon(
+                taxon_curie=taxon,
+                limit=limit,
+                offset=offset
+            )
         else:  # API
             return self._api_methods.get_alleles(
                 data_provider=data_provider,
