@@ -133,9 +133,11 @@ class AGRCurationAPIClient:
             Result from the first successful data source
 
         Raises:
+            AGRAuthenticationError: If authentication fails (not retried)
             AGRAPIError: If all available data sources fail
         """
         errors = []
+        auth_error = None
 
         # Try database first
         if db_func is not None:
@@ -144,6 +146,11 @@ class AGRCurationAPIClient:
                 result = db_func()
                 logger.info(f"{method_name}: Successfully used database")
                 return result
+            except AGRAuthenticationError as e:
+                # Authentication errors should not trigger fallback
+                auth_error = e
+                logger.debug(f"{method_name}: Database authentication failed: {e}")
+                errors.append(f"Database: {str(e)}")
             except Exception as e:
                 logger.debug(f"{method_name}: Database failed: {e}")
                 errors.append(f"Database: {str(e)}")
@@ -155,6 +162,11 @@ class AGRCurationAPIClient:
                 result = graphql_func()
                 logger.info(f"{method_name}: Successfully used GraphQL")
                 return result
+            except AGRAuthenticationError as e:
+                # Authentication errors should not trigger fallback
+                auth_error = e
+                logger.debug(f"{method_name}: GraphQL authentication failed: {e}")
+                errors.append(f"GraphQL: {str(e)}")
             except Exception as e:
                 logger.debug(f"{method_name}: GraphQL failed: {e}")
                 errors.append(f"GraphQL: {str(e)}")
@@ -166,11 +178,20 @@ class AGRCurationAPIClient:
                 result = api_func()
                 logger.info(f"{method_name}: Successfully used API")
                 return result
+            except AGRAuthenticationError as e:
+                # Authentication errors should not trigger fallback
+                auth_error = e
+                logger.debug(f"{method_name}: API authentication failed: {e}")
+                errors.append(f"API: {str(e)}")
             except Exception as e:
                 logger.debug(f"{method_name}: API failed: {e}")
                 errors.append(f"API: {str(e)}")
 
-        # All sources failed
+        # If all sources failed with authentication errors, raise authentication error
+        if auth_error is not None:
+            raise auth_error
+
+        # All sources failed with other errors
         error_msg = f"{method_name}: All data sources failed. " + "; ".join(errors)
         raise AGRAPIError(error_msg)
 
