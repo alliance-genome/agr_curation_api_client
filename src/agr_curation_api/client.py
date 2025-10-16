@@ -12,7 +12,7 @@ import urllib.request
 from datetime import datetime, timezone
 from enum import Enum
 from types import TracebackType
-from typing import Optional, Dict, Any, List, Union, Type
+from typing import Optional, Dict, Any, List, Union, Type, Callable
 
 from fastapi_okta.okta_utils import get_authentication_token, generate_headers
 
@@ -115,9 +115,15 @@ class AGRCurationAPIClient:
         """Get or create database methods instance (lazy initialization)."""
         if self._db_methods is None:
             self._db_methods = DatabaseMethods(DatabaseConfig())
-        return self._db_methods
+        return self._db_methods  # type: ignore[return-value]
 
-    def _execute_with_fallback(self, db_func, graphql_func, api_func, method_name: str = "method"):
+    def _execute_with_fallback(
+        self,
+        db_func: Optional[Callable[[], Any]],
+        graphql_func: Optional[Callable[[], Any]],
+        api_func: Optional[Callable[[], Any]],
+        method_name: str = "method"
+    ) -> Any:
         """Execute a function with automatic fallback through data sources.
 
         Tries data sources in order: db -> graphql -> api
@@ -379,7 +385,7 @@ class AGRCurationAPIClient:
                         error_messages = [err.get("message", str(err)) for err in result["errors"]]
                         raise AGRAPIError(f"GraphQL errors: {'; '.join(error_messages)}")
 
-                    return result.get("data", {})
+                    return result.get("data", {})  # type: ignore[return-value]
                 else:
                     raise AGRAPIError(f"GraphQL request failed with status: {response.getcode()}")
 
@@ -437,7 +443,7 @@ class AGRCurationAPIClient:
         if source is None:
             # Define functions for each data source (or None if not applicable)
             if taxon:  # Database requires taxon
-                def db_func():
+                def db_func() -> List[Gene]:
                     return self._get_db_methods().get_genes_by_taxon(
                         taxon_curie=taxon,
                         limit=limit,
@@ -445,9 +451,9 @@ class AGRCurationAPIClient:
                         include_obsolete=include_obsolete
                     )
             else:
-                db_func = None
+                db_func = None  # type: ignore[assignment]
 
-            def graphql_func():
+            def graphql_func() -> List[Gene]:
                 return self._graphql_methods.get_genes(
                     fields=fields,
                     data_provider=data_provider,
@@ -458,7 +464,7 @@ class AGRCurationAPIClient:
                     **kwargs
                 )
 
-            def api_func():
+            def api_func() -> List[Gene]:
                 return self._api_methods.get_genes(
                     data_provider=data_provider,
                     taxon=taxon,
@@ -572,16 +578,16 @@ class AGRCurationAPIClient:
         # If no data source specified, use fallback mechanism
         if source is None:
             if taxon:  # Database requires taxon
-                def db_func():
+                def db_func() -> List[Allele]:
                     return self._get_db_methods().get_alleles_by_taxon(
                         taxon_curie=taxon,
                         limit=limit,
                         offset=offset
                     )
             else:
-                db_func = None
+                db_func = None  # type: ignore[assignment]
 
-            def graphql_func():
+            def graphql_func() -> List[Allele]:
                 return self._graphql_methods.get_alleles(
                     fields=fields,
                     data_provider=data_provider,
@@ -591,7 +597,7 @@ class AGRCurationAPIClient:
                     **kwargs
                 )
 
-            def api_func():
+            def api_func() -> List[Allele]:
                 return self._api_methods.get_alleles(
                     data_provider=data_provider,
                     limit=limit,
@@ -734,13 +740,13 @@ class AGRCurationAPIClient:
         # If no data source specified, use fallback mechanism
         if source is None:
             if taxon:  # Database requires taxon
-                def db_func():
+                def db_func() -> List[Dict[str, str]]:
                     return self._get_db_methods().get_expression_annotations(taxon_curie=taxon)
             else:
-                db_func = None
+                db_func = None  # type: ignore[assignment]
 
             if data_provider:  # API requires data_provider
-                def api_func():
+                def api_func() -> List[ExpressionAnnotation]:
                     return self._api_methods.get_expression_annotations(
                         data_provider=data_provider,
                         limit=limit,
@@ -751,7 +757,7 @@ class AGRCurationAPIClient:
                         _filter_by_date=self._filter_by_date
                     )
             else:
-                api_func = None
+                api_func = None  # type: ignore[assignment]
 
             return self._execute_with_fallback(db_func, None, api_func, "get_expression_annotations")
 
