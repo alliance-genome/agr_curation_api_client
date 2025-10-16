@@ -114,7 +114,7 @@ class AGRCurationAPIClient:
     def _get_db_methods(self) -> DatabaseMethods:
         """Get or create database methods instance (lazy initialization)."""
         if self._db_methods is None:
-            self._db_methods = DatabaseMethods(DatabaseConfig())
+            self._db_methods = DatabaseMethods(DatabaseConfig())  # type: ignore[assignment]
         return self._db_methods  # type: ignore[return-value]
 
     def _execute_with_fallback(
@@ -385,7 +385,7 @@ class AGRCurationAPIClient:
                         error_messages = [err.get("message", str(err)) for err in result["errors"]]
                         raise AGRAPIError(f"GraphQL errors: {'; '.join(error_messages)}")
 
-                    return result.get("data", {})  # type: ignore[return-value]
+                    return result.get("data", {})  # type: ignore[return-value,no-any-return]
                 else:
                     raise AGRAPIError(f"GraphQL request failed with status: {response.getcode()}")
 
@@ -412,7 +412,7 @@ class AGRCurationAPIClient:
         fields: Union[str, List[str], None] = None,
         include_obsolete: bool = False,
         data_source: Optional[Union[DataSource, str]] = None,
-        **kwargs
+        **kwargs: Any
     ) -> List[Gene]:
         """Get genes using the configured or specified data source.
 
@@ -478,7 +478,7 @@ class AGRCurationAPIClient:
                     _filter_by_date=self._filter_by_date
                 )
 
-            return self._execute_with_fallback(db_func, graphql_func, api_func, "get_genes")
+            return self._execute_with_fallback(db_func, graphql_func, api_func, "get_genes")  # type: ignore[return-value,no-any-return]
 
         # Explicit data source specified - use that one
         if source == DataSource.GRAPHQL:
@@ -551,7 +551,7 @@ class AGRCurationAPIClient:
         transgenes_only: bool = False,
         fields: Union[str, List[str], None] = None,
         data_source: Optional[Union[DataSource, str]] = None,
-        **kwargs
+        **kwargs: Any
     ) -> List[Allele]:
         """Get alleles using the configured or specified data source.
 
@@ -609,7 +609,7 @@ class AGRCurationAPIClient:
                     _filter_by_date=self._filter_by_date
                 )
 
-            return self._execute_with_fallback(db_func, graphql_func, api_func, "get_alleles")
+            return self._execute_with_fallback(db_func, graphql_func, api_func, "get_alleles")  # type: ignore[return-value,no-any-return]
 
         # Explicit data source specified - use that one
         if source == DataSource.GRAPHQL:
@@ -759,7 +759,7 @@ class AGRCurationAPIClient:
             else:
                 api_func = None  # type: ignore[assignment]
 
-            return self._execute_with_fallback(db_func, None, api_func, "get_expression_annotations")
+            return self._execute_with_fallback(db_func, None, api_func, "get_expression_annotations")  # type: ignore[return-value,no-any-return]
 
         # Explicit data source specified - use that one
         if source == DataSource.DATABASE:
