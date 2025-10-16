@@ -52,16 +52,17 @@ class AGRCurationAPIClient:
     - GraphQL: Efficient queries with flexible field selection
     - REST API: Full-featured API with all entity types (fallback)
 
-    When no data source is specified, the client automatically tries to use
-    the fastest available source in order: db -> graphql -> api
+    When no data source is specified, each method call automatically tries the
+    fastest available source in order: db -> graphql -> api. If a call fails,
+    it automatically falls back to the next best source.
 
     Args:
         config: API configuration object, dictionary, or None for defaults
         data_source: Primary data source to use ('api', 'graphql', 'db', or None).
-            If None, auto-detects the best available source. Can be overridden per method call.
+            If None, tries each source with automatic fallback. Can be overridden per method call.
 
     Example:
-        # Auto-detect best available data source (db -> graphql -> api)
+        # Automatic fallback per call (db -> graphql -> api)
         client = AGRCurationAPIClient()
         genes = client.get_genes(taxon="NCBITaxon:6239", limit=10)
 
@@ -84,7 +85,7 @@ class AGRCurationAPIClient:
         Args:
             config: API configuration object, dictionary, or None for defaults
             data_source: Primary data source ('api', 'graphql', or 'db').
-                If None, automatically tries db -> graphql -> api in order.
+                If None, each call will try db -> graphql -> api with automatic fallback.
         """
         if config is None:
             config = APIConfig()  # type: ignore[call-arg]
@@ -103,62 +104,75 @@ class AGRCurationAPIClient:
         self._graphql_methods = GraphQLMethods(self._make_graphql_request)
         self._db_methods = None  # Lazy initialization
 
-        # Auto-detect data source if not specified
-        if data_source is None:
-            self.data_source = self._auto_detect_data_source()
-        else:
+        # Store data source preference (None means auto-fallback per call)
+        if data_source is not None:
             # Convert string to enum if needed
             if isinstance(data_source, str):
                 data_source = DataSource(data_source.lower())
-            self.data_source = data_source
-
-    def _auto_detect_data_source(self) -> DataSource:
-        """Auto-detect the best available data source.
-
-        Tries in order: db -> graphql -> api
-
-        Returns:
-            DataSource enum for the first available source
-        """
-        # Try database first
-        try:
-            db_methods = self._get_db_methods()
-            # Test with a minimal query
-            test_genes = db_methods.get_genes_by_taxon(
-                taxon_curie="NCBITaxon:6239",
-                limit=1,
-                include_obsolete=False
-            )
-            if test_genes:
-                logger.info("Auto-detected data source: database")
-                return DataSource.DATABASE
-        except Exception as e:
-            logger.debug(f"Database not available: {e}")
-
-        # Try GraphQL next
-        try:
-            # Test with a minimal GraphQL query
-            test_genes = self._graphql_methods.get_genes(
-                fields="minimal",
-                taxon="NCBITaxon:6239",
-                limit=1,
-                include_obsolete=False
-            )
-            if test_genes:
-                logger.info("Auto-detected data source: GraphQL")
-                return DataSource.GRAPHQL
-        except Exception as e:
-            logger.debug(f"GraphQL not available: {e}")
-
-        # Fall back to API (should always work)
-        logger.info("Auto-detected data source: REST API")
-        return DataSource.API
+        self.data_source = data_source
 
     def _get_db_methods(self) -> DatabaseMethods:
         """Get or create database methods instance (lazy initialization)."""
         if self._db_methods is None:
             self._db_methods = DatabaseMethods(DatabaseConfig())
         return self._db_methods
+
+    def _execute_with_fallback(self, db_func, graphql_func, api_func, method_name: str = "method"):
+        """Execute a function with automatic fallback through data sources.
+
+        Tries data sources in order: db -> graphql -> api
+        Falls back to next source if current one fails.
+
+        Args:
+            db_func: Callable for database implementation (or None if not available)
+            graphql_func: Callable for GraphQL implementation (or None if not available)
+            api_func: Callable for API implementation (or None if not available)
+            method_name: Name of the method being called (for logging)
+
+        Returns:
+            Result from the first successful data source
+
+        Raises:
+            AGRAPIError: If all available data sources fail
+        """
+        errors = []
+
+        # Try database first
+        if db_func is not None:
+            try:
+                logger.debug(f"{method_name}: Trying database")
+                result = db_func()
+                logger.info(f"{method_name}: Successfully used database")
+                return result
+            except Exception as e:
+                logger.debug(f"{method_name}: Database failed: {e}")
+                errors.append(f"Database: {str(e)}")
+
+        # Try GraphQL next
+        if graphql_func is not None:
+            try:
+                logger.debug(f"{method_name}: Trying GraphQL")
+                result = graphql_func()
+                logger.info(f"{method_name}: Successfully used GraphQL")
+                return result
+            except Exception as e:
+                logger.debug(f"{method_name}: GraphQL failed: {e}")
+                errors.append(f"GraphQL: {str(e)}")
+
+        # Try API last
+        if api_func is not None:
+            try:
+                logger.debug(f"{method_name}: Trying API")
+                result = api_func()
+                logger.info(f"{method_name}: Successfully used API")
+                return result
+            except Exception as e:
+                logger.debug(f"{method_name}: API failed: {e}")
+                errors.append(f"API: {str(e)}")
+
+        # All sources failed
+        error_msg = f"{method_name}: All data sources failed. " + "; ".join(errors)
+        raise AGRAPIError(error_msg)
 
     def _get_headers(self) -> Dict[str, str]:
         """Get headers with authentication token."""
@@ -394,9 +408,48 @@ class AGRCurationAPIClient:
             - API can filter by both data_provider (MOD abbreviation) and taxon (species)
             - GraphQL/DB filter by taxon to get consistent results across data sources
             - For C. elegans: use taxon="NCBITaxon:6239" OR data_provider="WB"
+            - When data_source is None, automatically tries db -> graphql -> api with fallback
         """
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
+        # If no data source specified, use fallback mechanism
+        if source is None:
+            # Define functions for each data source (or None if not applicable)
+            db_func = None
+            if taxon:  # Database requires taxon
+                db_func = lambda: self._get_db_methods().get_genes_by_taxon(
+                    taxon_curie=taxon,
+                    limit=limit,
+                    offset=offset,
+                    include_obsolete=include_obsolete
+                )
+
+            graphql_func = lambda: self._graphql_methods.get_genes(
+                fields=fields,
+                data_provider=data_provider,
+                taxon=taxon,
+                limit=limit,
+                page=page,
+                include_obsolete=include_obsolete,
+                **kwargs
+            )
+
+            api_func = lambda: self._api_methods.get_genes(
+                data_provider=data_provider,
+                taxon=taxon,
+                limit=limit,
+                page=page,
+                updated_after=updated_after,
+                include_obsolete=include_obsolete,
+                _apply_data_provider_filter=self._apply_data_provider_filter,
+                _apply_taxon_filter=self._apply_taxon_filter,
+                _apply_date_sorting=self._apply_date_sorting,
+                _filter_by_date=self._filter_by_date
+            )
+
+            return self._execute_with_fallback(db_func, graphql_func, api_func, "get_genes")
+
+        # Explicit data source specified - use that one
         if source == DataSource.GRAPHQL:
             return self._graphql_methods.get_genes(
                 fields=fields,
@@ -485,9 +538,45 @@ class AGRCurationAPIClient:
 
         Returns:
             List of Allele objects
+
+        Note:
+            - When data_source is None, automatically tries db -> graphql -> api with fallback
         """
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
+        # If no data source specified, use fallback mechanism
+        if source is None:
+            db_func = None
+            if taxon:  # Database requires taxon
+                db_func = lambda: self._get_db_methods().get_alleles_by_taxon(
+                    taxon_curie=taxon,
+                    limit=limit,
+                    offset=offset
+                )
+
+            graphql_func = lambda: self._graphql_methods.get_alleles(
+                fields=fields,
+                data_provider=data_provider,
+                taxon=taxon,
+                limit=limit,
+                page=page,
+                **kwargs
+            )
+
+            api_func = lambda: self._api_methods.get_alleles(
+                data_provider=data_provider,
+                limit=limit,
+                page=page,
+                updated_after=updated_after,
+                transgenes_only=transgenes_only,
+                _apply_data_provider_filter=self._apply_data_provider_filter,
+                _apply_date_sorting=self._apply_date_sorting,
+                _filter_by_date=self._filter_by_date
+            )
+
+            return self._execute_with_fallback(db_func, graphql_func, api_func, "get_alleles")
+
+        # Explicit data source specified - use that one
         if source == DataSource.GRAPHQL:
             return self._graphql_methods.get_alleles(
                 fields=fields,
@@ -606,9 +695,34 @@ class AGRCurationAPIClient:
         Returns:
             List of ExpressionAnnotation objects (API) or List of dictionaries (DB)
             DB format: {"gene_id": str, "gene_symbol": str, "anatomy_id": str}
+
+        Note:
+            - When data_source is None, automatically tries db -> api with fallback
+            - GraphQL does not support expression annotations
         """
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
+        # If no data source specified, use fallback mechanism
+        if source is None:
+            db_func = None
+            if taxon:  # Database requires taxon
+                db_func = lambda: self._get_db_methods().get_expression_annotations(taxon_curie=taxon)
+
+            api_func = None
+            if data_provider:  # API requires data_provider
+                api_func = lambda: self._api_methods.get_expression_annotations(
+                    data_provider=data_provider,
+                    limit=limit,
+                    page=page,
+                    updated_after=updated_after,
+                    _apply_data_provider_filter=self._apply_data_provider_filter,
+                    _apply_date_sorting=self._apply_date_sorting,
+                    _filter_by_date=self._filter_by_date
+                )
+
+            return self._execute_with_fallback(db_func, None, api_func, "get_expression_annotations")
+
+        # Explicit data source specified - use that one
         if source == DataSource.DATABASE:
             if not taxon:
                 raise AGRAPIError("taxon parameter is required for database queries")

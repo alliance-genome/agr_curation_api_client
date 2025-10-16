@@ -1159,6 +1159,119 @@ def test_database_methods(limit: int = 5):
     return all_successful
 
 
+def test_automatic_fallback(limit: int = 5):
+    """Test automatic data source fallback mechanism.
+
+    This test demonstrates how the client automatically tries multiple data sources
+    (database -> GraphQL -> API) when no explicit data source is specified.
+
+    Args:
+        limit: Maximum number of results to fetch
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("TESTING AUTOMATIC DATA SOURCE FALLBACK")
+    print("="*70)
+    print("\nThis test demonstrates automatic fallback: db -> graphql -> api")
+    print("The client tries each data source in order until one succeeds.\n")
+
+    all_successful = True
+    taxon = "NCBITaxon:6239"  # C. elegans
+
+    # Create client with NO data source specified (enables automatic fallback)
+    print("Creating client with NO explicit data source...")
+    client = AGRCurationAPIClient()
+    print("✓ Client initialized (data_source=None, fallback enabled)\n")
+
+    # Test 1: Get genes with taxon (should try DB -> GraphQL -> API)
+    print("--- Test 1: Get Genes (with taxon parameter) ---")
+    print(f"Calling: client.get_genes(taxon='{taxon}', limit={limit})")
+    print("Expected fallback order: Database -> GraphQL -> API")
+    try:
+        genes = client.get_genes(taxon=taxon, limit=limit)
+        print(f"✓ Successfully retrieved {len(genes)} genes")
+        if genes:
+            for i, gene in enumerate(genes[:3], 1):
+                symbol = gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'
+                print(f"  {i}. {symbol}")
+        print("Note: Check the logs above to see which data source was actually used\n")
+    except Exception as e:
+        print(f"❌ Error: {e}\n")
+        all_successful = False
+
+    # Test 2: Get alleles with taxon (should try DB -> GraphQL -> API)
+    print("--- Test 2: Get Alleles (with taxon parameter) ---")
+    print(f"Calling: client.get_alleles(taxon='{taxon}', limit={limit})")
+    print("Expected fallback order: Database -> GraphQL -> API")
+    try:
+        alleles = client.get_alleles(taxon=taxon, limit=limit)
+        print(f"✓ Successfully retrieved {len(alleles)} alleles")
+        if alleles:
+            for i, allele in enumerate(alleles[:3], 1):
+                symbol = allele.alleleSymbol.displayText if allele.alleleSymbol else 'N/A'
+                print(f"  {i}. {symbol}")
+        print("Note: Check the logs above to see which data source was actually used\n")
+    except Exception as e:
+        print(f"❌ Error: {e}\n")
+        all_successful = False
+
+    # Test 3: Get expression annotations (should try DB -> API)
+    print("--- Test 3: Get Expression Annotations ---")
+    print(f"Calling: client.get_expression_annotations(taxon='{taxon}')")
+    print("Expected fallback order: Database -> API (GraphQL not supported)")
+    try:
+        annotations = client.get_expression_annotations(taxon=taxon)
+        print(f"✓ Successfully retrieved {len(annotations)} expression annotations")
+        if annotations:
+            for ann in annotations[:3]:
+                print(f"  - Gene: {ann['gene_symbol']} ({ann['gene_id']}) -> {ann['anatomy_id']}")
+        print("Note: Check the logs above to see which data source was actually used\n")
+    except Exception as e:
+        print(f"❌ Error: {e}\n")
+        all_successful = False
+
+    # Test 4: Demonstrate what happens without required parameters
+    print("--- Test 4: Get Genes (without taxon - API only) ---")
+    print(f"Calling: client.get_genes(limit={limit})")
+    print("Expected: Skip DB (no taxon), try GraphQL -> API")
+    try:
+        genes = client.get_genes(limit=limit)
+        print(f"✓ Successfully retrieved {len(genes)} genes")
+        if genes:
+            for i, gene in enumerate(genes[:3], 1):
+                symbol = gene.geneSymbol.displayText if gene.geneSymbol else 'N/A'
+                print(f"  {i}. {symbol}")
+        print("Note: Database was skipped because taxon parameter is required for DB\n")
+    except Exception as e:
+        print(f"❌ Error: {e}\n")
+        all_successful = False
+
+    # Summary
+    print("="*70)
+    print("AUTOMATIC FALLBACK TEST SUMMARY")
+    print("="*70)
+    print("\nKey Points:")
+    print("  • When data_source=None, each method call tries multiple sources")
+    print("  • Fallback order: Database -> GraphQL -> API")
+    print("  • Database requires specific parameters (e.g., taxon for genes)")
+    print("  • If a source fails, the next one is tried automatically")
+    print("  • The first successful source returns the data")
+    print("\nBenefits:")
+    print("  • No upfront connection testing needed")
+    print("  • Automatic adaptation to available services")
+    print("  • Resilient to temporary failures of individual sources")
+    print("  • Each call uses the best available source at that moment")
+
+    if all_successful:
+        print("\n✓ All automatic fallback tests completed successfully!")
+    else:
+        print("\n⚠️ Some automatic fallback tests failed")
+
+    return all_successful
+
+
 def main():
     # Print header
     print("="*70)
@@ -1225,6 +1338,10 @@ def main():
 
     # Test database methods
     success = test_database_methods(limit=LIMIT)
+    all_successful = all_successful and success
+
+    # Test automatic fallback mechanism
+    success = test_automatic_fallback(limit=LIMIT)
     all_successful = all_successful and success
 
     # Summary
