@@ -1,6 +1,6 @@
 """GraphQL query builder utilities for AGR Curation API."""
 
-from typing import List, Dict, Any, Optional, Set, Union
+from typing import List, Dict, Optional, Set, Union
 
 
 class FieldSelector:
