@@ -917,3 +917,159 @@ class AGRCurationAPIClient:
             # {'WBGene00000001': ([['HGNC:123', 'GENE1', 'Gene 1 full name']], False), ...}
         """
         return self._get_db_methods().get_best_human_orthologs_for_taxon(taxon_curie=taxon)
+
+    # Entity mapping methods (DB only, from agr_literature_service)
+    def map_entity_names_to_curies(
+        self,
+        entity_type: str,
+        entity_names: List[str],
+        taxon: str
+    ) -> List[Dict[str, Any]]:
+        """Map entity names to their CURIEs.
+
+        Args:
+            entity_type: Type of entity ('gene', 'allele', 'agm', 'construct', 'targeting reagent')
+            entity_names: List of entity names/symbols to search for
+            taxon: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239')
+
+        Returns:
+            List of dictionaries with entity_curie, is_obsolete, entity (name) keys
+
+        Example:
+            results = client.map_entity_names_to_curies('gene', ['ACT1', 'CDC42'], 'NCBITaxon:559292')
+        """
+        return self._get_db_methods().map_entity_names_to_curies(
+            entity_type=entity_type,
+            entity_names=entity_names,
+            taxon_curie=taxon
+        )
+
+    def map_entity_curies_to_info(
+        self,
+        entity_type: str,
+        entity_curies: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Map entity CURIEs to their basic information.
+
+        Args:
+            entity_type: Type of entity ('gene', 'allele', 'agm', 'construct', 'targeting reagent')
+            entity_curies: List of entity CURIEs to look up
+
+        Returns:
+            List of dictionaries with entity_curie, is_obsolete keys
+
+        Example:
+            results = client.map_entity_curies_to_info('gene', ['SGD:S000000001', 'SGD:S000000002'])
+        """
+        return self._get_db_methods().map_entity_curies_to_info(
+            entity_type=entity_type,
+            entity_curies=entity_curies
+        )
+
+    def map_curies_to_names(
+        self,
+        category: str,
+        curies: List[str]
+    ) -> Dict[str, str]:
+        """Map entity CURIEs to their display names.
+
+        Args:
+            category: Category of entity ('gene', 'allele', 'construct', 'agm', 'species', etc.)
+            curies: List of CURIEs to map
+
+        Returns:
+            Dictionary mapping CURIE to display name
+
+        Example:
+            mapping = client.map_curies_to_names('gene', ['SGD:S000000001'])
+            # {'SGD:S000000001': 'ACT1'}
+        """
+        return self._get_db_methods().map_curies_to_names(
+            category=category,
+            curies=curies
+        )
+
+    # ATP/Topic ontology methods (DB only, from agr_literature_service)
+    def search_atp_topics(
+        self,
+        topic: Optional[str] = None,
+        mod_abbr: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Dict[str, str]]:
+        """Search ATP ontology for topics.
+
+        Args:
+            topic: Topic name to search for (partial match, case-insensitive)
+            mod_abbr: MOD abbreviation to filter by (e.g., 'WB', 'SGD')
+            limit: Maximum number of results to return
+
+        Returns:
+            List of dictionaries with curie and name keys
+
+        Example:
+            topics = client.search_atp_topics(topic='development', mod_abbr='WB')
+        """
+        return self._get_db_methods().search_atp_topics(
+            topic=topic,
+            mod_abbr=mod_abbr,
+            limit=limit
+        )
+
+    def get_atp_descendants(
+        self,
+        ancestor_curie: str
+    ) -> List[Dict[str, str]]:
+        """Get all descendants of an ATP ontology term.
+
+        Args:
+            ancestor_curie: ATP CURIE (e.g., 'ATP:0000002')
+
+        Returns:
+            List of dictionaries with curie and name keys
+
+        Example:
+            descendants = client.get_atp_descendants('ATP:0000002')
+        """
+        return self._get_db_methods().get_atp_descendants(ancestor_curie=ancestor_curie)
+
+    def search_ontology_ancestors_or_descendants(
+        self,
+        ontology_node: str,
+        direction: str = 'descendants'
+    ) -> List[str]:
+        """Get ancestors or descendants of an ontology node.
+
+        Args:
+            ontology_node: Ontology term CURIE
+            direction: 'ancestors' or 'descendants'
+
+        Returns:
+            List of CURIEs
+
+        Example:
+            desc = client.search_ontology_ancestors_or_descendants('GO:0008150', 'descendants')
+        """
+        return self._get_db_methods().get_ontology_ancestors_or_descendants(
+            ontology_node=ontology_node,
+            direction=direction
+        )
+
+    # Species search methods (DB only, from agr_literature_service)
+    def search_species(
+        self,
+        species: str,
+        limit: int = 10
+    ) -> List[Dict[str, str]]:
+        """Search for species by name or CURIE.
+
+        Args:
+            species: Species name or CURIE prefix to search for
+            limit: Maximum number of results
+
+        Returns:
+            List of dictionaries with curie and name keys
+
+        Example:
+            results = client.search_species('elegans')
+        """
+        return self._get_db_methods().search_species(species=species, limit=limit)

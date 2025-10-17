@@ -13,10 +13,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import ValidationError
 
-from .models import Gene, Allele
+from .models import Gene, Allele, NCBITaxonTerm
 from .exceptions import AGRAPIError
 
 logger = logging.getLogger(__name__)
+
+# Constants for entity and topic mapping (from agr_literature_service ateam_db_helpers)
+CURIE_PREFIX_LIST = ["FB", "MGI", "RGD", "SGD", "WB", "XenBase", "ZFIN"]
+TOPIC_CATEGORY_ATP = "ATP:0000002"
 
 
 class DatabaseConfig:
@@ -751,6 +755,465 @@ class DatabaseMethods:
                 excluded = len(ortho_list) > len(best_orthos)
                 result[gene_id] = (best_orthos, excluded)
             return result
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    # Entity mapping methods (from agr_literature_service ateam_db_helpers.py)
+    def map_entity_names_to_curies(
+        self,
+        entity_type: str,
+        entity_names: List[str],
+        taxon_curie: str
+    ) -> List[Dict[str, Any]]:
+        """Map entity names to their CURIEs by searching slot annotations.
+
+        Args:
+            entity_type: Type of entity ('gene', 'allele', 'agm', 'construct', 'targeting reagent')
+            entity_names: List of entity names/symbols to search for
+            taxon_curie: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239')
+
+        Returns:
+            List of dictionaries with entity_curie, is_obsolete, entity (name) keys
+
+        Example:
+            results = db_methods.map_entity_names_to_curies('gene', ['ACT1', 'CDC42'], 'NCBITaxon:559292')
+        """
+        if not entity_names:
+            return []
+
+        session = self._create_session()
+        try:
+            entity_type = entity_type.lower()
+            entity_names_upper = [name.upper() for name in entity_names]
+
+            if entity_type == 'gene':
+                sql_query = text("""
+                SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
+                FROM biologicalentity be
+                JOIN slotannotation sa ON be.id = sa.singlegene_id
+                JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE sa.slotannotationtype IN (
+                    'GeneSymbolSlotAnnotation',
+                    'GeneSystematicNameSlotAnnotation',
+                    'GeneFullNameSlotAnnotation'
+                )
+                AND UPPER(sa.displaytext) IN :entity_name_list
+                AND ot.curie = :taxon
+                """)
+            elif entity_type == 'allele':
+                sql_query = text("""
+                SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
+                FROM biologicalentity be
+                JOIN slotannotation sa ON be.id = sa.singleallele_id
+                JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE sa.slotannotationtype = 'AlleleSymbolSlotAnnotation'
+                AND UPPER(sa.displaytext) IN :entity_name_list
+                AND ot.curie = :taxon
+                """)
+            elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
+                sql_query = text("""
+                SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
+                FROM biologicalentity be
+                JOIN slotannotation sa ON be.id = sa.singleagm_id
+                JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE sa.slotannotationtype IN (
+                    'AgmFullNameSlotAnnotation',
+                    'AgmSecondaryIdSlotAnnotation',
+                    'AgmSynonymSlotAnnotation'
+                )
+                AND UPPER(sa.displaytext) IN :entity_name_list
+                AND ot.curie = :taxon
+                """)
+            elif 'targeting reagent' in entity_type:
+                sql_query = text("""
+                SELECT DISTINCT be.primaryexternalid, be.obsolete, str.name
+                FROM biologicalentity be
+                JOIN sequencetargetingreagent str ON be.id = str.id
+                JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE UPPER(str.name) IN :entity_name_list
+                AND ot.curie = :taxon
+                """)
+            elif entity_type == 'construct':
+                sql_query = text("""
+                SELECT DISTINCT r.primaryexternalid, sa.obsolete, sa.displaytext
+                FROM reagent r
+                JOIN slotannotation sa ON r.id = sa.singleconstruct_id
+                WHERE sa.slotannotationtype IN (
+                    'ConstructFullNameSlotAnnotation',
+                    'ConstructSymbolSlotAnnotation'
+                )
+                AND UPPER(sa.displaytext) IN :entity_name_list
+                """)
+                rows = session.execute(sql_query, {'entity_name_list': tuple(entity_names_upper)}).fetchall()
+                return [{"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2]} for row in rows]
+            else:
+                raise AGRAPIError(f"Unknown entity_type '{entity_type}'")
+
+            rows = session.execute(sql_query, {
+                'entity_name_list': tuple(entity_names_upper),
+                'taxon': taxon_curie
+            }).fetchall()
+
+            return [{"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2]} for row in rows]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def map_entity_curies_to_info(
+        self,
+        entity_type: str,
+        entity_curies: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Map entity CURIEs to their basic information.
+
+        Args:
+            entity_type: Type of entity ('gene', 'allele', 'agm', 'construct', 'targeting reagent')
+            entity_curies: List of entity CURIEs to look up
+
+        Returns:
+            List of dictionaries with entity_curie, is_obsolete keys
+
+        Example:
+            results = db_methods.map_entity_curies_to_info('gene', ['SGD:S000000001', 'SGD:S000000002'])
+        """
+        if not entity_curies:
+            return []
+
+        session = self._create_session()
+        try:
+            entity_type = entity_type.lower()
+            entity_curies_upper = [curie.upper() for curie in entity_curies]
+
+            if entity_type in ['gene', 'allele']:
+                entity_table_name = entity_type
+                sql_query = text(f"""
+                SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
+                FROM biologicalentity be, {entity_table_name} ent_tbl
+                WHERE be.id = ent_tbl.id
+                AND UPPER(be.primaryexternalid) IN :entity_curie_list
+                """)
+            elif entity_type == 'construct':
+                sql_query = text("""
+                SELECT DISTINCT r.primaryexternalid, r.obsolete, r.primaryexternalid
+                FROM reagent r, construct c
+                WHERE r.id = c.id
+                AND UPPER(r.primaryexternalid) IN :entity_curie_list
+                """)
+            elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
+                sql_query = text("""
+                SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
+                FROM biologicalentity be, affectedgenomicmodel agm
+                WHERE be.id = agm.id
+                AND UPPER(be.primaryexternalid) IN :entity_curie_list
+                """)
+            elif 'targeting reagent' in entity_type:
+                sql_query = text("""
+                SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
+                FROM biologicalentity be, sequencetargetingreagent str
+                WHERE be.id = str.id
+                AND UPPER(be.primaryexternalid) IN :entity_curie_list
+                """)
+            else:
+                raise AGRAPIError(f"Unknown entity_type '{entity_type}'")
+
+            rows = session.execute(sql_query, {'entity_curie_list': tuple(entity_curies_upper)}).fetchall()
+            return [{"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2]} for row in rows]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def map_curies_to_names(
+        self,
+        category: str,
+        curies: List[str]
+    ) -> Dict[str, str]:
+        """Map entity CURIEs to their display names.
+
+        Args:
+            category: Category of entity ('gene', 'allele', 'construct', 'agm', 'species', etc.)
+            curies: List of CURIEs to map
+
+        Returns:
+            Dictionary mapping CURIE to display name
+
+        Example:
+            mapping = db_methods.map_curies_to_names('gene', ['SGD:S000000001'])
+            # {'SGD:S000000001': 'ACT1'}
+        """
+        if not curies:
+            return {}
+
+        session = self._create_session()
+        try:
+            category = category.lower()
+
+            if category == 'gene':
+                sql_query = text("""
+                SELECT be.primaryexternalid, sa.displaytext
+                FROM biologicalentity be
+                JOIN slotannotation sa ON be.id = sa.singlegene_id
+                WHERE be.primaryexternalid IN :curies
+                AND sa.slotannotationtype = 'GeneSymbolSlotAnnotation'
+                """)
+            elif 'allele' in category:
+                sql_query = text("""
+                SELECT be.primaryexternalid, sa.displaytext
+                FROM biologicalentity be
+                JOIN slotannotation sa ON be.id = sa.singleallele_id
+                WHERE be.primaryexternalid IN :curies
+                AND sa.slotannotationtype = 'AlleleSymbolSlotAnnotation'
+                """)
+            elif category in ['affected genome model', 'agm', 'strain', 'genotype', 'fish']:
+                sql_query = text("""
+                SELECT DISTINCT be.primaryexternalid, sa.displaytext
+                FROM biologicalentity be
+                JOIN slotannotation sa ON be.id = sa.singleagm_id
+                WHERE be.primaryexternalid IN :curies
+                AND sa.slotannotationtype = 'AgmFullNameSlotAnnotation'
+                """)
+            elif 'construct' in category:
+                sql_query = text("""
+                SELECT r.primaryexternalid, sa.displaytext
+                FROM reagent r
+                JOIN slotannotation sa ON r.id = sa.singleconstruct_id
+                WHERE r.primaryexternalid IN :curies
+                AND sa.slotannotationtype = 'ConstructSymbolSlotAnnotation'
+                """)
+            elif category in ['species', 'ecoterm']:
+                curies_upper = [curie.upper() for curie in curies]
+                sql_query = text("""
+                SELECT curie, name
+                FROM ontologyterm
+                WHERE UPPER(curie) IN :curies
+                """)
+                rows = session.execute(sql_query, {'curies': tuple(curies_upper)}).fetchall()
+                return {row[0]: row[1] for row in rows}
+            else:
+                # Return identity mapping for unknown categories
+                return {curie: curie for curie in curies}
+
+            rows = session.execute(sql_query, {'curies': tuple(curies)}).fetchall()
+            return {row[0]: row[1] for row in rows}
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    # ATP/Topic ontology methods (from agr_literature_service ateam_db_helpers.py)
+    def search_atp_topics(
+        self,
+        topic: Optional[str] = None,
+        mod_abbr: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Dict[str, str]]:
+        """Search ATP ontology for topics.
+
+        Args:
+            topic: Topic name to search for (partial match, case-insensitive)
+            mod_abbr: MOD abbreviation to filter by (e.g., 'WB', 'SGD')
+            limit: Maximum number of results to return
+
+        Returns:
+            List of dictionaries with curie and name keys
+
+        Example:
+            topics = db_methods.search_atp_topics(topic='development', mod_abbr='WB')
+        """
+        session = self._create_session()
+        try:
+            if topic and mod_abbr:
+                search_query = f"%{topic.upper()}%"
+                sql_query = text("""
+                SELECT DISTINCT ot.curie, ot.name
+                FROM ontologyterm ot
+                JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
+                JOIN ontologyterm ancestor ON ancestor.id = otc.closureobject_id
+                JOIN ontologyterm_subsets s ON ot.id = s.ontologyterm_id
+                WHERE ot.ontologytermtype = 'ATPTerm'
+                AND UPPER(ot.name) LIKE :search_query
+                AND ot.obsolete = false
+                AND ancestor.curie = :topic_category_atp
+                AND s.subsets = :mod_abbr
+                LIMIT :limit
+                """)
+                rows = session.execute(sql_query, {
+                    'search_query': search_query,
+                    'topic_category_atp': TOPIC_CATEGORY_ATP,
+                    'mod_abbr': f'{mod_abbr}_tag',
+                    'limit': limit
+                }).fetchall()
+            elif topic:
+                search_query = f"%{topic.upper()}%"
+                sql_query = text("""
+                SELECT DISTINCT ot.curie, ot.name
+                FROM ontologyterm ot
+                JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
+                JOIN ontologyterm ancestor ON ancestor.id = otc.closureobject_id
+                WHERE ot.ontologytermtype = 'ATPTerm'
+                AND UPPER(ot.name) LIKE :search_query
+                AND ot.obsolete = false
+                AND ancestor.curie = :topic_category_atp
+                LIMIT :limit
+                """)
+                rows = session.execute(sql_query, {
+                    'search_query': search_query,
+                    'topic_category_atp': TOPIC_CATEGORY_ATP,
+                    'limit': limit
+                }).fetchall()
+            elif mod_abbr:
+                sql_query = text("""
+                SELECT DISTINCT ot.curie, ot.name
+                FROM ontologyterm ot
+                JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
+                JOIN ontologyterm ancestor ON ancestor.id = otc.closureobject_id
+                JOIN ontologyterm_subsets s ON ot.id = s.ontologyterm_id
+                WHERE ot.ontologytermtype = 'ATPTerm'
+                AND ancestor.curie = :topic_category_atp
+                AND s.subsets = :mod_abbr
+                """)
+                rows = session.execute(sql_query, {
+                    'topic_category_atp': TOPIC_CATEGORY_ATP,
+                    'mod_abbr': f'{mod_abbr}_tag'
+                }).fetchall()
+            else:
+                return []
+
+            return [{"curie": row[0], "name": row[1]} for row in rows]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def get_atp_descendants(
+        self,
+        ancestor_curie: str
+    ) -> List[Dict[str, str]]:
+        """Get all descendants of an ATP ontology term.
+
+        Args:
+            ancestor_curie: ATP CURIE (e.g., 'ATP:0000002')
+
+        Returns:
+            List of dictionaries with curie and name keys
+
+        Example:
+            descendants = db_methods.get_atp_descendants('ATP:0000002')
+        """
+        session = self._create_session()
+        try:
+            sql_query = text("""
+            SELECT DISTINCT ot.curie, ot.name
+            FROM ontologyterm ot
+            JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
+            JOIN ontologyterm ancestor ON ancestor.id = otc.closureobject_id
+            WHERE ot.ontologytermtype = 'ATPTerm'
+            AND ot.obsolete = false
+            AND ancestor.curie = :ancestor_curie
+            """)
+            rows = session.execute(sql_query, {'ancestor_curie': ancestor_curie}).fetchall()
+            return [{"curie": row[0], "name": row[1]} for row in rows]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def get_ontology_ancestors_or_descendants(
+        self,
+        ontology_node: str,
+        direction: str = 'descendants'
+    ) -> List[str]:
+        """Get ancestors or descendants of an ontology node.
+
+        Args:
+            ontology_node: Ontology term CURIE
+            direction: 'ancestors' or 'descendants'
+
+        Returns:
+            List of CURIEs
+
+        Example:
+            desc = db_methods.search_ontology_ancestors_or_descendants('GO:0008150', 'descendants')
+        """
+        session = self._create_session()
+        try:
+            if direction == 'descendants':
+                sql_query = text("""
+                SELECT DISTINCT ot.curie
+                FROM ontologyterm ot
+                JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
+                JOIN ontologyterm ancestor ON ancestor.id = otc.closureobject_id
+                WHERE ancestor.curie = :ontology_node
+                AND ot.obsolete = False
+                """)
+            else:  # ancestors
+                sql_query = text("""
+                SELECT DISTINCT ot.curie
+                FROM ontologyterm ot
+                JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
+                JOIN ontologyterm descendant ON descendant.id = otc.closureobject_id
+                WHERE descendant.curie = :ontology_node
+                AND ot.obsolete = False
+                """)
+
+            rows = session.execute(sql_query, {'ontology_node': ontology_node}).fetchall()
+            return [row[0] for row in rows]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    # Species search methods (from agr_literature_service ateam_db_helpers.py)
+    def search_species(
+        self,
+        species: str,
+        limit: int = 10
+    ) -> List[Dict[str, str]]:
+        """Search for species by name or CURIE.
+
+        Args:
+            species: Species name or CURIE prefix to search for
+            limit: Maximum number of results
+
+        Returns:
+            List of dictionaries with curie and name keys
+
+        Example:
+            results = db_methods.search_species('elegans')
+        """
+        session = self._create_session()
+        try:
+            if species.upper().startswith("NCBITAXON"):
+                search_query = f"{species.upper()}%"
+                sql_query = text("""
+                SELECT curie, name
+                FROM ontologyterm
+                WHERE ontologytermtype = 'NCBITaxonTerm'
+                AND UPPER(curie) LIKE :search_query
+                LIMIT :limit
+                """)
+            else:
+                search_query = f"%{species.upper()}%"
+                sql_query = text("""
+                SELECT curie, name
+                FROM ontologyterm
+                WHERE ontologytermtype = 'NCBITaxonTerm'
+                AND UPPER(name) LIKE :search_query
+                LIMIT :limit
+                """)
+
+            rows = session.execute(sql_query, {'search_query': search_query, 'limit': limit}).fetchall()
+            return [{"curie": row[0], "name": row[1]} for row in rows]
+
         except Exception as e:
             raise AGRAPIError(f"Database query failed: {str(e)}")
         finally:
