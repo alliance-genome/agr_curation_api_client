@@ -6,6 +6,10 @@ tenacity>=8.0.0
 python-dateutil>=2.8.0
 fastapi-okta>=1.3.0  # Latest version from the repository
 
+# Database dependencies
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0  # PostgreSQL adapter
+
 # LinkML dependencies for schema-based model generation
 linkml>=1.7.0
 linkml-runtime>=1.7.0

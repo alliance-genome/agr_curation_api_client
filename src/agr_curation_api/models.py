@@ -285,6 +285,41 @@ class Species(BaseModel):
     model_config = ConfigDict(extra='allow')
 
 
+class NCBITaxonTerm(BaseModel):
+    """NCBI Taxon term model that matches API response.
+
+    NCBITaxonTerm inherits from OntologyTerm in the AGR schema.
+    This represents taxonomic species from the NCBI Taxonomy database.
+    """
+
+    type: Optional[str] = None
+    id: Optional[int] = None
+    curie: Optional[str] = None
+
+    name: Optional[str] = None
+    definition: Optional[str] = None
+    namespace: Optional[str] = None
+
+    # Additional fields from OntologyTerm
+    dbkey: Optional[str] = None
+    definitionUrls: Optional[List[str]] = None
+    crossReferences: Optional[List[CrossReference]] = None
+    synonyms: Optional[List[str]] = None
+    subsets: Optional[List[str]] = None
+    secondaryIdentifiers: Optional[List[str]] = None
+
+    # Hierarchy fields
+    ancestors: Optional[List[str]] = None
+    descendants: Optional[List[str]] = None
+    childCount: Optional[int] = None
+    descendantCount: Optional[int] = None
+
+    obsolete: Optional[bool] = None
+    internal: Optional[bool] = None
+
+    model_config = ConfigDict(extra='allow')
+
+
 class OntologyTerm(BaseModel):
     """Ontology term model that matches API response."""
 
