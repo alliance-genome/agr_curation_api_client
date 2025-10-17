@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import ValidationError
 
-from .models import Gene, Allele, NCBITaxonTerm
+from .models import Gene, Allele
 from .exceptions import AGRAPIError
 
 logger = logging.getLogger(__name__)
