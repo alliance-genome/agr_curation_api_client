@@ -9,7 +9,7 @@ This refactored client supports three data access methods:
 import json
 import logging
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from types import TracebackType
 from typing import Optional, Dict, Any, List, Union, Type, Callable
@@ -35,6 +35,11 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+Number = Union[int, float]
+
+def _to_td(v: Union[timedelta, Number]) -> timedelta:
+    return v if isinstance(v, timedelta) else timedelta(seconds=float(v))
 
 
 class DataSource(str, Enum):
@@ -78,22 +83,52 @@ class AGRCurationAPIClient:
     def __init__(
         self,
         config: Union[APIConfig, Dict[str, Any], None] = None,
-        data_source: Union[DataSource, str, None] = None
+        data_source: Union[DataSource, str, None] = None,
+        *,
+        base_url: Optional[str] = None,
+        okta_token: Optional[str] = None,
+        timeout: Union[timedelta, Number, None] = None,
+        retry_delay: Union[timedelta, Number, None] = None,
+        max_retries: Optional[int] = None,
+        verify_ssl: Optional[bool] = None,
+        headers: Optional[Dict[str, str]] = None,
+        # swallow any other legacy kwargs rather than erroring
+        **_ignore: Any,
     ):
         """Initialize the API client.
 
-        Args:
-            config: API configuration object, dictionary, or None for defaults
-            data_source: Primary data source ('api', 'graphql', or 'db').
-                If None, each call will try db -> graphql -> api with automatic fallback.
+        You can pass a full APIConfig via `config`, or override specific fields
+        with simple kwargs like `base_url`, `timeout`, etc. This keeps compatibility
+        with existing call sites and unit tests.
         """
+        # Normalize/construct config
         if config is None:
-            config = APIConfig()  # type: ignore[call-arg]
+            cfg_kwargs: Dict[str, Any] = {}
         elif isinstance(config, dict):
-            config = APIConfig(**config)
+            cfg_kwargs = dict(config)
+        else:
+            # Start from the provided model, then allow overrides via kwargs below
+            cfg_kwargs = config.model_dump()  # pydantic v2
 
-        self.config = config
-        self.base_url = str(self.config.base_url)
+        # Apply explicit overrides if provided
+        if base_url is not None:
+            cfg_kwargs["base_url"] = base_url
+        if okta_token is not None:
+            cfg_kwargs["okta_token"] = okta_token
+        if timeout is not None:
+            cfg_kwargs["timeout"] = _to_td(timeout)
+        if retry_delay is not None:
+            cfg_kwargs["retry_delay"] = _to_td(retry_delay)
+        if max_retries is not None:
+            cfg_kwargs["max_retries"] = max_retries
+        if verify_ssl is not None:
+            cfg_kwargs["verify_ssl"] = verify_ssl
+        if headers is not None:
+            cfg_kwargs["headers"] = headers
+
+        # Build validated config (uses ATEAM_API_URL default inside APIConfig)
+        self.config = APIConfig(**cfg_kwargs)
+        self.base_url = str(self.config.base_url).rstrip("/")
 
         # Initialize authentication token if not provided
         if not self.config.okta_token:
@@ -104,11 +139,12 @@ class AGRCurationAPIClient:
         self._graphql_methods = GraphQLMethods(self._make_graphql_request)
         self._db_methods = None  # Lazy initialization
 
-        # Store data source preference (None means auto-fallback per call)
-        if data_source is not None:
-            # Convert string to enum if needed
-            if isinstance(data_source, str):
+        # Store data source preference (None = auto-fallback per call)
+        if isinstance(data_source, str) and data_source:
+            try:
                 data_source = DataSource(data_source.lower())
+            except ValueError:
+                data_source = None  # unknown string → treat as auto
         self.data_source = data_source
 
     def _get_db_methods(self) -> DatabaseMethods:

@@ -2,19 +2,29 @@
 
 import os
 from typing import Optional, Dict, Any, List, Union
-from pydantic import BaseModel, Field, HttpUrl, field_validator, ConfigDict, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, ConfigDict, model_validator, field_serializer
 from datetime import datetime, timedelta
+
+Number = Union[int, float]
 
 
 class APIConfig(BaseModel):
     """Configuration for AGR Curation API client."""
 
     base_url: HttpUrl = Field(
-        default_factory=lambda: HttpUrl(
+        default_factory=lambda: (
             os.getenv("ATEAM_API_URL", "https://curation.alliancegenome.org/api")
-        ),
+        ).rstrip("/"),
         description="Base URL for the A-Team Curation API"
     )
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, v):
+        if isinstance(v, str):
+            return v.rstrip("/")
+        return v
+
     okta_token: Optional[str] = Field(None, description="Okta bearer token for authentication")
     timeout: timedelta = Field(
         default=timedelta(seconds=30),
@@ -31,19 +41,27 @@ class APIConfig(BaseModel):
         description="Additional headers to include in requests"
     )
 
-    @field_validator('timeout', 'retry_delay')
-    def validate_timedelta(cls, v: timedelta) -> timedelta:
-        """Ensure timedelta is positive."""
+    @field_validator("timeout", "retry_delay", mode="before")
+    @classmethod
+    def _coerce_td(cls, v: Union[timedelta, Number]) -> timedelta:
+        if isinstance(v, (int, float)):
+            return timedelta(seconds=float(v))
+        return v
+
+    @field_validator("timeout", "retry_delay")
+    @classmethod
+    def _validate_positive(cls, v: timedelta) -> timedelta:
         if v.total_seconds() <= 0:
             raise ValueError("Timeout and retry_delay must be positive")
         return v
 
-    class Config:
-        """Pydantic config."""
+    # Pydantic v2 way to control JSON serialization for timedeltas (seconds)
+    @field_serializer("timeout", "retry_delay")
+    def _ser_td(self, v: timedelta) -> float:
+        return v.total_seconds()
 
-        json_encoders = {
-            timedelta: lambda v: v.total_seconds()
-        }
+    # v2 config style
+    model_config = ConfigDict()
 
 
 class APIResponse(BaseModel):
