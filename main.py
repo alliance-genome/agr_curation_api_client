@@ -1058,6 +1058,105 @@ def benchmark_all_data_sources(limit: int = 100, runs: int = 3):
         return False
 
 
+def fetch_wb_alleles_for_extraction(client: AGRCurationAPIClient, limit: int = 10, verbose: bool = False):
+    """Fetch WB alleles using the special extraction subset filter.
+
+    This demonstrates the wb_extraction_subset parameter which applies WB-specific filtering:
+    - Only WB alleles (WB:WBVar prefix, excludes transgenes)
+    - Excludes Million_mutation_project collection alleles
+    - Excludes fallback WBVar symbols
+    - Forces taxon to NCBITaxon:6239 (C. elegans)
+
+    Args:
+        client: AGR API client instance
+        limit: Maximum number of results to fetch
+        verbose: Show detailed information
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    print("\n" + "="*70)
+    print("FETCHING WB ALLELES FOR EXTRACTION (FILTERED SUBSET)")
+    print("="*70)
+    print("\nThis demonstrates the wb_extraction_subset parameter which:")
+    print("  • Only includes WB alleles with WB:WBVar prefix")
+    print("  • Excludes Million Mutation Project alleles")
+    print("  • Excludes fallback WBVar symbols")
+    print("  • Automatically filters to C. elegans (NCBITaxon:6239)")
+
+    try:
+        # Create a database client (extraction subset only works with database)
+        print("\nCreating database client for filtered allele extraction...")
+        db_client = AGRCurationAPIClient(data_source="db")
+        print("✓ Database client initialized")
+
+        # Fetch WB alleles for extraction
+        print(f"\nFetching WB alleles with extraction filter (limit={limit})...")
+        alleles = db_client.get_alleles(
+            taxon='NCBITaxon:6239',
+            wb_extraction_subset=True,
+            limit=limit
+        )
+
+        print(f"\n✓ Successfully retrieved {len(alleles)} WB alleles for extraction")
+
+        if alleles:
+            for i, allele in enumerate(alleles, 1):
+                print(f"\n{'='*60}")
+                print(f"Allele {i}: {allele.curie or 'N/A'}")
+                print(f"{'='*60}")
+
+                if allele.alleleSymbol:
+                    print(f"Symbol: {allele.alleleSymbol.displayText}")
+
+                if allele.primaryExternalId:
+                    print(f"Primary ID: {allele.primaryExternalId}")
+
+                if verbose and allele.alleleFullName:
+                    print(f"Full Name: {allele.alleleFullName.displayText}")
+
+        # Comparison: fetch standard alleles
+        print("\n" + "="*70)
+        print("COMPARISON: Standard WB Alleles (without extraction filter)")
+        print("="*70)
+
+        standard_alleles = db_client.get_alleles(
+            taxon='NCBITaxon:6239',
+            wb_extraction_subset=False,
+            limit=limit
+        )
+
+        print(f"\n✓ Retrieved {len(standard_alleles)} standard WB alleles")
+        print(f"\nDifference: {len(standard_alleles) - len(alleles)} alleles filtered out by extraction subset")
+
+        # Show examples of what was filtered out
+        if len(standard_alleles) > len(alleles):
+            print("\nExample alleles EXCLUDED by extraction filter:")
+            count = 0
+            for allele in standard_alleles:
+                if count >= 3:
+                    break
+                symbol = allele.alleleSymbol.displayText if allele.alleleSymbol else 'N/A'
+                allele_id = allele.primaryExternalId or 'N/A'
+
+                # Check if this allele would be excluded
+                if allele_id and not allele_id.startswith('WB:WBVar'):
+                    print(f"  • {symbol} ({allele_id}) - Not a WBVar allele")
+                    count += 1
+                elif symbol and symbol.startswith('WBVar'):
+                    print(f"  • {symbol} ({allele_id}) - Fallback WBVar symbol")
+                    count += 1
+
+        print("\n✓ WB allele extraction subset demonstration completed successfully!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        print("\nNote: This feature requires database access with proper credentials.")
+        print("      If database is not available, this test will be skipped.")
+        return False
+
+
 def test_database_methods(limit: int = 5):
     """Test direct database access methods (requires database credentials).
 
@@ -1338,6 +1437,10 @@ def main():
 
     # Test database methods
     success = test_database_methods(limit=LIMIT)
+    all_successful = all_successful and success
+
+    # Test WB allele extraction subset (database feature)
+    success = fetch_wb_alleles_for_extraction(client, limit=LIMIT, verbose=True)
     all_successful = all_successful and success
 
     # Test automatic fallback mechanism

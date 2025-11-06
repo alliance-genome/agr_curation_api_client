@@ -549,6 +549,7 @@ class AGRCurationAPIClient:
         offset: Optional[int] = None,
         updated_after: Optional[Union[str, datetime]] = None,
         transgenes_only: bool = False,
+        wb_extraction_subset: bool = False,
         fields: Union[str, List[str], None] = None,
         data_source: Optional[Union[DataSource, str]] = None,
         **kwargs: Any
@@ -563,6 +564,11 @@ class AGRCurationAPIClient:
             offset: Number of results to skip (DB only)
             updated_after: Filter for entities updated after this date (API only)
             transgenes_only: If True, return transgenes only (API only, WB only)
+            wb_extraction_subset: If True, apply WB-specific filtering for allele extraction (DB only):
+                - Only WB alleles (WB:WBVar prefix, excludes transgenes)
+                - Excludes Million_mutation_project collection alleles
+                - Excludes fallback WBVar symbols
+                - Forces taxon to NCBITaxon:6239 (C. elegans)
             fields: Field specification (GraphQL only)
             data_source: Override default data source
             **kwargs: Additional parameters for GraphQL
@@ -582,7 +588,8 @@ class AGRCurationAPIClient:
                     return self._get_db_methods().get_alleles_by_taxon(
                         taxon_curie=taxon,
                         limit=limit,
-                        offset=offset
+                        offset=offset,
+                        wb_extraction_subset=wb_extraction_subset
                     )
             else:
                 db_func = None  # type: ignore[assignment]
@@ -628,7 +635,8 @@ class AGRCurationAPIClient:
             return db_methods.get_alleles_by_taxon(
                 taxon_curie=taxon,
                 limit=limit,
-                offset=offset
+                offset=offset,
+                wb_extraction_subset=wb_extraction_subset
             )
         else:  # API
             return self._api_methods.get_alleles(

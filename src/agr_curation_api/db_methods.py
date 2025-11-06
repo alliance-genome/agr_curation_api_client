@@ -217,7 +217,8 @@ class DatabaseMethods:
         self,
         taxon_curie: str,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        wb_extraction_subset: bool = False
     ) -> List[Allele]:
         """Get alleles from the database by taxon.
 
@@ -228,6 +229,11 @@ class DatabaseMethods:
             taxon_curie: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239')
             limit: Maximum number of alleles to return
             offset: Number of alleles to skip (for pagination)
+            wb_extraction_subset: If True, apply WB-specific filtering for allele extraction:
+                - Only WB alleles (WB:WBVar prefix, excludes transgenes)
+                - Excludes Million_mutation_project collection alleles
+                - Excludes fallback WBVar symbols
+                - Forces taxon to NCBITaxon:6239 (C. elegans)
 
         Returns:
             List of Allele objects with basic information
@@ -235,37 +241,79 @@ class DatabaseMethods:
         Example:
             # Get C. elegans alleles
             alleles = db_methods.get_alleles_by_taxon('NCBITaxon:6239', limit=100)
+
+            # Get WB alleles for extraction (with filtering)
+            alleles = db_methods.get_alleles_by_taxon(
+                'NCBITaxon:6239',
+                limit=1000,
+                wb_extraction_subset=True
+            )
         """
         session = self._create_session()
         try:
-            sql_query = text("""
-            SELECT
-                be.primaryexternalid as "primaryExternalId",
-                slota.displaytext as alleleSymbol
-            FROM
-                biologicalentity be
-                JOIN allele a ON be.id = a.id
-                JOIN slotannotation slota ON a.id = slota.singleallele_id
-                JOIN ontologyterm taxon ON be.taxon_id = taxon.id
-            WHERE
-                slota.obsolete = false
-            AND
-                be.obsolete = false
-            AND
-                slota.slotannotationtype = 'AlleleSymbolSlotAnnotation'
-            AND
-                taxon.curie = :taxon_curie
-            ORDER BY
-                be.primaryexternalid
-            """)
+            if wb_extraction_subset:
+                # Special query for WB allele extraction
+                sql_query = text("""
+                SELECT DISTINCT
+                    be.primaryexternalid,
+                    sa.displaytext
+                FROM
+                    biologicalentity be
+                    JOIN slotannotation sa ON be.id = sa.singleallele_id
+                    JOIN allele al ON be.id = al.id
+                    JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE
+                    sa.slotannotationtype = 'AlleleSymbolSlotAnnotation'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM vocabularyterm vt
+                    WHERE vt.id = al.incollection_id
+                      AND vt.name ILIKE 'Million_mutation_project'
+                )
+                AND sa.displaytext NOT ILIKE 'WBVar%'
+                AND be.primaryexternalid LIKE 'WB:WBVar%'
+                AND ot.curie = 'NCBITaxon:6239'
+                ORDER BY
+                    be.primaryexternalid
+                """)
 
-            # Add pagination if specified
-            if limit is not None:
-                sql_query = text(str(sql_query) + f" LIMIT {limit}")
-            if offset is not None:
-                sql_query = text(str(sql_query) + f" OFFSET {offset}")
+                # Add pagination if specified
+                if limit is not None:
+                    sql_query = text(str(sql_query) + f" LIMIT {limit}")
+                if offset is not None:
+                    sql_query = text(str(sql_query) + f" OFFSET {offset}")
 
-            rows = session.execute(sql_query, {'taxon_curie': taxon_curie}).fetchall()
+                rows = session.execute(sql_query).fetchall()
+            else:
+                # Standard allele query
+                sql_query = text("""
+                SELECT
+                    be.primaryexternalid as "primaryExternalId",
+                    slota.displaytext as alleleSymbol
+                FROM
+                    biologicalentity be
+                    JOIN allele a ON be.id = a.id
+                    JOIN slotannotation slota ON a.id = slota.singleallele_id
+                    JOIN ontologyterm taxon ON be.taxon_id = taxon.id
+                WHERE
+                    slota.obsolete = false
+                AND
+                    be.obsolete = false
+                AND
+                    slota.slotannotationtype = 'AlleleSymbolSlotAnnotation'
+                AND
+                    taxon.curie = :taxon_curie
+                ORDER BY
+                    be.primaryexternalid
+                """)
+
+                # Add pagination if specified
+                if limit is not None:
+                    sql_query = text(str(sql_query) + f" LIMIT {limit}")
+                if offset is not None:
+                    sql_query = text(str(sql_query) + f" OFFSET {offset}")
+
+                rows = session.execute(sql_query, {'taxon_curie': taxon_curie}).fetchall()
 
             alleles = []
             for row in rows:
