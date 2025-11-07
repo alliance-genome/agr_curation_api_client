@@ -579,6 +579,8 @@ class AGRCurationAPIClient:
         Note:
             - When data_source is None, automatically tries db -> graphql -> api with fallback
         """
+        if wb_extraction_subset:
+            taxon = 'NCBITaxon:6239'
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
         # If no data source specified, use fallback mechanism

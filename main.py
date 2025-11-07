@@ -1087,13 +1087,12 @@ def fetch_wb_alleles_for_extraction(client: AGRCurationAPIClient, limit: int = 1
     try:
         # Create a database client (extraction subset only works with database)
         print("\nCreating database client for filtered allele extraction...")
-        db_client = AGRCurationAPIClient(data_source="db")
+        db_client = AGRCurationAPIClient()
         print("✓ Database client initialized")
 
         # Fetch WB alleles for extraction
         print(f"\nFetching WB alleles with extraction filter (limit={limit})...")
         alleles = db_client.get_alleles(
-            taxon='NCBITaxon:6239',
             wb_extraction_subset=True,
             limit=limit
         )
