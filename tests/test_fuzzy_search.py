@@ -3,9 +3,8 @@
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-from agr_curation_api.db_methods import DatabaseMethods
+from agr_curation_api.db_methods import DatabaseMethods, DatabaseConfig
 from agr_curation_api.exceptions import AGRAPIError
-from agr_curation_api.config import DatabaseConfig
 
 
 class TestFuzzySearch(unittest.TestCase):
