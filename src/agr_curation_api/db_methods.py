@@ -213,6 +213,115 @@ class DatabaseMethods:
         finally:
             session.close()
 
+    def get_gene(
+        self,
+        gene_id: str
+    ) -> Optional[Gene]:
+        """Get a specific gene by ID from the database.
+
+        This uses direct SQL queries to fetch complete gene information
+        including symbol, full name, systematic name, gene type, and taxon.
+
+        Args:
+            gene_id: Gene CURIE or primary external ID (e.g., 'WB:WBGene00001044')
+
+        Returns:
+            Gene object with complete information, or None if not found
+
+        Example:
+            # Get a specific gene
+            gene = db_methods.get_gene('WB:WBGene00001044')
+            if gene:
+                print(f"Symbol: {gene.geneSymbol.displayText}")
+                print(f"Full name: {gene.geneFullName.displayText if gene.geneFullName else 'N/A'}")
+        """
+        session = self._create_session()
+        try:
+            # Query to get complete gene information
+            sql_query = text("""
+            SELECT
+                be.primaryexternalid,
+                be.curie,
+                be.obsolete,
+                be.internal,
+                taxon.curie as taxon_curie,
+                gt.name as genetype_name,
+                symbol.displaytext as gene_symbol,
+                symbol.formattext as gene_symbol_format,
+                fullname.displaytext as gene_fullname,
+                fullname.formattext as gene_fullname_format,
+                sysname.displaytext as gene_systematic_name,
+                sysname.formattext as gene_systematic_name_format
+            FROM
+                biologicalentity be
+                JOIN gene g ON be.id = g.id
+                LEFT JOIN ontologyterm taxon ON be.taxon_id = taxon.id
+                LEFT JOIN ontologyterm gt ON g.genetype_id = gt.id
+                LEFT JOIN slotannotation symbol ON g.id = symbol.singlegene_id
+                    AND symbol.slotannotationtype = 'GeneSymbolSlotAnnotation'
+                    AND symbol.obsolete = false
+                LEFT JOIN slotannotation fullname ON g.id = fullname.singlegene_id
+                    AND fullname.slotannotationtype = 'GeneFullNameSlotAnnotation'
+                    AND fullname.obsolete = false
+                LEFT JOIN slotannotation sysname ON g.id = sysname.singlegene_id
+                    AND sysname.slotannotationtype = 'GeneSystematicNameSlotAnnotation'
+                    AND sysname.obsolete = false
+            WHERE
+                be.primaryexternalid = :gene_id
+            LIMIT 1
+            """)
+
+            row = session.execute(sql_query, {'gene_id': gene_id}).fetchone()
+
+            if row is None:
+                return None
+
+            # Build Gene object from query results
+            gene_data = {
+                'primaryExternalId': row[0],
+                'curie': row[1] or row[0],  # Use primaryExternalId as fallback
+                'obsolete': row[2],
+                'internal': row[3],
+                'taxon': row[4],
+            }
+
+            # Add gene type if available
+            if row[5]:
+                gene_data['geneType'] = {'name': row[5]}
+
+            # Add gene symbol if available
+            if row[6]:
+                gene_data['geneSymbol'] = {
+                    'displayText': row[6],
+                    'formatText': row[7] or row[6]
+                }
+
+            # Add gene full name if available
+            if row[8]:
+                gene_data['geneFullName'] = {
+                    'displayText': row[8],
+                    'formatText': row[9] or row[8]
+                }
+
+            # Add gene systematic name if available
+            if row[10]:
+                gene_data['geneSystematicName'] = {
+                    'displayText': row[10],
+                    'formatText': row[11] or row[10]
+                }
+
+            try:
+                gene = Gene(**gene_data)
+                return gene
+            except ValidationError as e:
+                logger.warning(f"Failed to parse gene data from DB for {gene_id}: {e}")
+                return None
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for gene {gene_id}: {str(e)}")
+        finally:
+            session.close()
+
     def get_alleles_by_taxon(
         self,
         taxon_curie: str,
@@ -392,6 +501,105 @@ class DatabaseMethods:
 
         except Exception as e:
             raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def get_allele(
+        self,
+        allele_id: str
+    ) -> Optional[Allele]:
+        """Get a specific allele by ID from the database.
+
+        This uses direct SQL queries to fetch complete allele information
+        including symbol, full name, collection, extinction status, and taxon.
+
+        Args:
+            allele_id: Allele CURIE or primary external ID (e.g., 'WB:WBVar00250000')
+
+        Returns:
+            Allele object with complete information, or None if not found
+
+        Example:
+            # Get a specific allele
+            allele = db_methods.get_allele('WB:WBVar00250000')
+            if allele:
+                print(f"Symbol: {allele.alleleSymbol.displayText}")
+                print(f"Full name: {allele.alleleFullName.displayText if allele.alleleFullName else 'N/A'}")
+                print(f"Is extinct: {allele.isExtinct}")
+        """
+        session = self._create_session()
+        try:
+            # Query to get complete allele information
+            sql_query = text("""
+            SELECT
+                be.primaryexternalid,
+                be.curie,
+                be.obsolete,
+                be.internal,
+                taxon.curie as taxon_curie,
+                a.isextinct,
+                coll.name as collection_name,
+                symbol.displaytext as allele_symbol,
+                symbol.formattext as allele_symbol_format,
+                fullname.displaytext as allele_fullname,
+                fullname.formattext as allele_fullname_format
+            FROM
+                biologicalentity be
+                JOIN allele a ON be.id = a.id
+                LEFT JOIN ontologyterm taxon ON be.taxon_id = taxon.id
+                LEFT JOIN vocabularyterm coll ON a.incollection_id = coll.id
+                LEFT JOIN slotannotation symbol ON a.id = symbol.singleallele_id
+                    AND symbol.slotannotationtype = 'AlleleSymbolSlotAnnotation'
+                    AND symbol.obsolete = false
+                LEFT JOIN slotannotation fullname ON a.id = fullname.singleallele_id
+                    AND fullname.slotannotationtype = 'AlleleFullNameSlotAnnotation'
+                    AND fullname.obsolete = false
+            WHERE
+                be.primaryexternalid = :allele_id
+            LIMIT 1
+            """)
+
+            row = session.execute(sql_query, {'allele_id': allele_id}).fetchone()
+
+            if row is None:
+                return None
+
+            # Build Allele object from query results
+            allele_data = {
+                'primaryExternalId': row[0],
+                'curie': row[1] or row[0],  # Use primaryExternalId as fallback
+                'obsolete': row[2],
+                'internal': row[3],
+                'taxon': row[4],
+                'isExtinct': row[5],
+            }
+
+            # Add collection name if available (not in standard Allele model, but useful)
+            # Note: This may need to be added to the Allele model or handled separately
+
+            # Add allele symbol if available
+            if row[7]:
+                allele_data['alleleSymbol'] = {
+                    'displayText': row[7],
+                    'formatText': row[8] or row[7]
+                }
+
+            # Add allele full name if available
+            if row[9]:
+                allele_data['alleleFullName'] = {
+                    'displayText': row[9],
+                    'formatText': row[10] or row[9]
+                }
+
+            try:
+                allele = Allele(**allele_data)
+                return allele
+            except ValidationError as e:
+                logger.warning(f"Failed to parse allele data from DB for {allele_id}: {e}")
+                return None
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for allele {allele_id}: {str(e)}")
         finally:
             session.close()
 
