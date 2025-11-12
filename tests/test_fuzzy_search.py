@@ -3,18 +3,9 @@
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-import sys
-import os
-import importlib.util
-
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-# Direct import of db_methods module
-db_methods_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'agr_curation_api', 'db_methods.py')
-spec = importlib.util.spec_from_file_location("db_methods", db_methods_path)
-db_methods = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(db_methods)
+from agr_curation_api.db_methods import DatabaseMethods
+from agr_curation_api.exceptions import AGRAPIError
+from agr_curation_api.config import DatabaseConfig
 
 
 class TestFuzzySearch(unittest.TestCase):
@@ -23,13 +14,13 @@ class TestFuzzySearch(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         # Mock database config
-        self.mock_config = Mock()
+        self.mock_config = Mock(spec=DatabaseConfig)
         self.mock_config.connection_string = "postgresql://test:test@localhost/test"
 
         # Create DatabaseMethods instance with mocked dependencies
-        with patch('db_methods.create_engine'), \
-             patch('db_methods.sessionmaker'):
-            self.db_methods = db_methods.DatabaseMethods(self.mock_config)
+        with patch('agr_curation_api.db_methods.create_engine'), \
+             patch('agr_curation_api.db_methods.sessionmaker'):
+            self.db_methods = DatabaseMethods(self.mock_config)
 
     def test_empty_search_pattern_returns_empty_list(self):
         """Test that empty search pattern returns empty list."""
@@ -40,7 +31,7 @@ class TestFuzzySearch(unittest.TestCase):
         )
         self.assertEqual(result, [])
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_gene_fuzzy_search_includes_synonyms_by_default(self, mock_session_factory):
         """Test that gene search includes synonyms by default."""
         # Mock session and execute
@@ -71,7 +62,7 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session.execute.assert_called_once()
         mock_session.close.assert_called_once()
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_allele_fuzzy_search_works(self, mock_session_factory):
         """Test that allele fuzzy search works correctly."""
         mock_session = MagicMock()
@@ -91,7 +82,7 @@ class TestFuzzySearch(unittest.TestCase):
         self.assertEqual(result[0]['entity_curie'], 'FB:FBal0014878')
         self.assertEqual(result[0]['match_type'], 'starts_with')
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_agm_fuzzy_search_works(self, mock_session_factory):
         """Test that AGM fuzzy search works correctly."""
         mock_session = MagicMock()
@@ -110,7 +101,7 @@ class TestFuzzySearch(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['entity_curie'], 'ZFIN:ZDB-FISH-123')
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_exclude_synonyms_flag_works(self, mock_session_factory):
         """Test that include_synonyms=False excludes synonyms."""
         mock_session = MagicMock()
@@ -137,7 +128,7 @@ class TestFuzzySearch(unittest.TestCase):
         # When include_synonyms=False, GeneSynonymSlotAnnotation shouldn't be in query
         self.assertNotIn('GeneSynonymSlotAnnotation', sql_text)
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_limit_parameter_works(self, mock_session_factory):
         """Test that limit parameter is passed to query."""
         mock_session = MagicMock()
@@ -165,7 +156,7 @@ class TestFuzzySearch(unittest.TestCase):
         # Verify results returned
         self.assertEqual(len(result), 5)
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_relevance_ordering_in_results(self, mock_session_factory):
         """Test that results include relevance scoring."""
         mock_session = MagicMock()
@@ -194,13 +185,13 @@ class TestFuzzySearch(unittest.TestCase):
         self.assertEqual(result[1]['match_type'], 'starts_with')
         self.assertEqual(result[2]['match_type'], 'contains')
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_unsupported_entity_type_raises_error(self, mock_session_factory):
         """Test that unsupported entity types raise AGRAPIError."""
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
-        with self.assertRaises(db_methods.AGRAPIError) as context:
+        with self.assertRaises(AGRAPIError) as context:
             self.db_methods.search_entities_fuzzy(
                 entity_type='invalid_type',
                 search_pattern='test',
@@ -209,7 +200,7 @@ class TestFuzzySearch(unittest.TestCase):
 
         self.assertIn("Unsupported entity_type", str(context.exception))
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_database_error_handling(self, mock_session_factory):
         """Test that database errors are caught and re-raised as AGRAPIError."""
         mock_session = MagicMock()
@@ -218,7 +209,7 @@ class TestFuzzySearch(unittest.TestCase):
         # Simulate database error
         mock_session.execute.side_effect = Exception("Database connection failed")
 
-        with self.assertRaises(db_methods.AGRAPIError) as context:
+        with self.assertRaises(AGRAPIError) as context:
             self.db_methods.search_entities_fuzzy(
                 entity_type='gene',
                 search_pattern='test',
@@ -230,7 +221,7 @@ class TestFuzzySearch(unittest.TestCase):
         # Verify session was closed even after error
         mock_session.close.assert_called_once()
 
-    @patch('db_methods.DatabaseMethods._create_session')
+    @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_case_insensitive_search(self, mock_session_factory):
         """Test that search is case-insensitive."""
         mock_session = MagicMock()
