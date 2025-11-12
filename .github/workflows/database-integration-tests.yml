@@ -1,0 +1,280 @@
+name: Database Integration Tests
+
+# Run integration tests against the production curation database
+# These tests validate search functionality with real data
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  database-tests:
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write  # Required for OIDC
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.dev.txt
+          pip install -e .
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CLAUDE_CODE_PR_ROLE_ARN }}
+          aws-region: us-east-1
+          role-duration-seconds: 1800  # 30 minutes
+
+      - name: Get database configuration from AWS
+        id: db-config
+        run: |
+          set -euo pipefail
+
+          # Get configuration
+          CONFIG=$(aws secretsmanager get-secret-value \
+            --secret-id /claude-code-pr/config \
+            --query SecretString --output text) || {
+            echo "❌ Failed to retrieve config from AWS Secrets Manager"
+            exit 1
+          }
+
+          # Mask the entire CONFIG to hide internal hostnames
+          echo "::add-mask::$CONFIG"
+
+          # Extract values
+          SSM_INSTANCE_ID=$(echo $CONFIG | jq -r .ssm_instance_id)
+          DB_HOST=$(echo $CONFIG | jq -r .db_host)
+          DB_PORT=$(echo $CONFIG | jq -r .db_port)
+          DB_NAME=$(echo $CONFIG | jq -r .db_name)
+          DB_USER=$(echo $CONFIG | jq -r .db_user)
+
+          # Validate all required fields are present
+          for var in SSM_INSTANCE_ID DB_HOST DB_PORT DB_NAME DB_USER; do
+            if [ -z "${!var}" ] || [ "${!var}" = "null" ]; then
+              echo "❌ CONFIG missing or empty: $var"
+              exit 1
+            fi
+          done
+
+          # Mask internal infrastructure details
+          echo "::add-mask::$DB_HOST"
+          echo "::add-mask::$DB_PORT"
+          echo "::add-mask::$SSM_INSTANCE_ID"
+          echo "::add-mask::$DB_USER"
+          echo "::add-mask::$DB_NAME"
+
+          # Output validated values
+          echo "ssm_instance_id=$SSM_INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "db_host=$DB_HOST" >> $GITHUB_OUTPUT
+          echo "db_port=$DB_PORT" >> $GITHUB_OUTPUT
+          echo "db_name=$DB_NAME" >> $GITHUB_OUTPUT
+          echo "db_user=$DB_USER" >> $GITHUB_OUTPUT
+
+      - name: Cache SSM Plugin
+        id: cache-ssm-plugin
+        uses: actions/cache@v4
+        with:
+          path: /tmp/session-manager-plugin.deb
+          key: ${{ runner.os }}-ssm-plugin
+
+      - name: Install SSM Plugin and PostgreSQL client
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.cache-ssm-plugin.outputs.cache-hit }}" != 'true' ]; then
+            echo "Downloading SSM plugin..."
+            curl -fsSL -o /tmp/session-manager-plugin.deb \
+              https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb
+          fi
+
+          echo "Installing SSM plugin and PostgreSQL client..."
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+          sudo dpkg -i /tmp/session-manager-plugin.deb || {
+            echo "Initial dpkg install failed, fixing dependencies..."
+            sudo apt-get install -f -y
+            sudo dpkg -i /tmp/session-manager-plugin.deb
+          }
+
+          # Verify installations
+          session-manager-plugin --version
+          pg_isready --version
+
+      - name: Start database tunnel
+        id: tunnel
+        run: |
+          set -euo pipefail
+
+          # Configurable timeout values
+          TUNNEL_TIMEOUT="30m"  # Match OIDC session duration
+          WAIT_ITERATIONS=60
+          SLEEP_INTERVAL=2
+
+          # Dynamic port allocation to avoid collisions
+          LOCAL_PORT=$(comm -23 <(seq 5500 6500) <(ss -lnt | awk 'NR>1{print $4}' | awk -F: '{print $NF}' | sort -n) | shuf -n1)
+
+          # Final check that port is still available
+          if nc -z localhost $LOCAL_PORT 2>/dev/null; then
+            echo "❌ Port $LOCAL_PORT became unavailable, retrying..."
+            LOCAL_PORT=$(comm -23 <(seq 5500 6500) <(ss -lnt | awk 'NR>1{print $4}' | awk -F: '{print $NF}' | sort -n) | shuf -n1)
+          fi
+
+          echo "Using local port: $LOCAL_PORT"
+          echo "local_port=$LOCAL_PORT" >> $GITHUB_OUTPUT
+
+          # Start SSM session in background with timeout
+          timeout --foreground $TUNNEL_TIMEOUT \
+            aws ssm start-session \
+            --target ${{ steps.db-config.outputs.ssm_instance_id }} \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters '{"host":["${{ steps.db-config.outputs.db_host }}"],"portNumber":["${{ steps.db-config.outputs.db_port }}"],"localPortNumber":["'$LOCAL_PORT'"]}'  &
+
+          SSM_PID=$!
+          echo "pid=$SSM_PID" >> $GITHUB_OUTPUT
+
+          # Give SSM a moment to start
+          sleep 1
+
+          # Validate SSM process started successfully
+          if [ -z "$SSM_PID" ] || ! ps -p $SSM_PID >/dev/null 2>&1; then
+            echo "❌ SSM session failed to start"
+            echo "Check that the SSM instance ID and parameters are correct"
+            exit 1
+          fi
+
+          # Set up trap for cleanup on cancellation
+          cleanup() {
+            echo "Received cancel signal – cleaning up SSM tunnel"
+            if [ -n "$SSM_PID" ] && ps -p $SSM_PID >/dev/null 2>&1; then
+              kill -TERM -- -$SSM_PID 2>/dev/null || true
+            fi
+          }
+          trap 'cleanup' INT TERM
+
+          # Wait for tunnel with retry loop and process validation
+          echo "Waiting for SSM tunnel..."
+          for i in $(seq 1 $WAIT_ITERATIONS); do
+            # Check if SSM process is still running
+            if ! ps -p $SSM_PID >/dev/null 2>&1; then
+              echo "❌ SSM process crashed (PID: $SSM_PID)"
+              exit 1
+            fi
+
+            # Check if database is ready through tunnel using pg_isready
+            if pg_isready -h localhost -p $LOCAL_PORT -t 2 >/dev/null 2>&1; then
+              echo "✅ Database tunnel fully established on port $LOCAL_PORT after $(($i * $SLEEP_INTERVAL)) seconds"
+              break
+            else
+              if ps -p $SSM_PID >/dev/null 2>&1; then
+                echo "Waiting for database through tunnel..."
+              fi
+            fi
+
+            if [ $i -eq $WAIT_ITERATIONS ]; then
+              echo "❌ Timeout waiting for SSM tunnel after $(($WAIT_ITERATIONS * $SLEEP_INTERVAL)) seconds"
+              echo "Killing SSM process..."
+              kill $SSM_PID || true
+              exit 1
+            fi
+
+            sleep $SLEEP_INTERVAL
+          done
+
+      - name: Get database password
+        id: db-password
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2.0.6
+        with:
+          secret-ids: |
+            DB_CREDS,curation-db-readonly
+          parse-json-secrets: true
+
+      - name: Run database integration tests
+        env:
+          PERSISTENT_STORE_DB_HOST: localhost
+          PERSISTENT_STORE_DB_PORT: ${{ steps.tunnel.outputs.local_port }}
+          PERSISTENT_STORE_DB_NAME: ${{ steps.db-config.outputs.db_name }}
+          PERSISTENT_STORE_DB_USERNAME: ${{ steps.db-config.outputs.db_user }}
+          PERSISTENT_STORE_DB_PASSWORD: ${{ env.DB_CREDS_PASSWORD }}
+          TMP_PATH: /tmp/test_data
+        run: |
+          set -euo pipefail
+
+          # Mask password
+          echo "::add-mask::$PERSISTENT_STORE_DB_PASSWORD"
+
+          # Quick connectivity test
+          echo "Testing database connection..."
+          if PGPASSWORD="$PERSISTENT_STORE_DB_PASSWORD" psql -h localhost -p ${{ steps.tunnel.outputs.local_port }} -U "${{ steps.db-config.outputs.db_user }}" -d "${{ steps.db-config.outputs.db_name }}" -c "SELECT current_database(), version();" >/dev/null 2>&1; then
+            echo "✅ Database connection verified"
+          else
+            echo "❌ Database connection test failed"
+            exit 1
+          fi
+
+          # Run pytest with database integration tests
+          echo "Running database integration tests..."
+          pytest -v tests/ -k "not test_okta" --tb=short
+
+          echo "✅ All database integration tests passed!"
+
+      - name: Post test results comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : '❌';
+            const statusText = status === 'success' ? 'PASSED' : 'FAILED';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${emoji} **Database Integration Tests ${statusText}**
+
+              Tests ran against production curation database (read-only access).
+
+              ${status === 'success'
+                ? '✅ All fuzzy search and entity lookup tests passed with real data!'
+                : '❌ Some tests failed. Check the workflow logs for details.'}
+
+              [View full test results →](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`
+            });
+
+      - name: Cleanup
+        if: always() && steps.tunnel.outputs.pid != ''
+        run: |
+          set -euo pipefail
+
+          echo "Cleaning up SSM tunnel (PID: ${{ steps.tunnel.outputs.pid }})"
+
+          # Validate PID before attempting to kill
+          if [ -n "${{ steps.tunnel.outputs.pid }}" ] && ps -p ${{ steps.tunnel.outputs.pid }} >/dev/null 2>&1; then
+            # Kill the entire process group
+            kill -TERM -- -${{ steps.tunnel.outputs.pid }} 2>/dev/null || true
+          fi
+
+          # Also terminate any hanging SSM sessions
+          SESSIONS=$(aws ssm describe-sessions --state Active --filters "key=Target,value=${{ steps.db-config.outputs.ssm_instance_id }}" --query "Sessions[?DocumentName=='AWS-StartPortForwardingSessionToRemoteHost'].SessionId" --output text)
+          for session in $SESSIONS; do
+            echo "Terminating SSM session: $session"
+            aws ssm terminate-session --session-id $session || true
+          done
