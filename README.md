@@ -10,7 +10,9 @@ A unified Python client for Alliance of Genome Resources (AGR) curation APIs.
 ## Features
 
 - **Unified Interface**: Single client for all AGR curation API endpoints
+- **Multiple Data Sources**: Supports REST API, GraphQL, and direct database access
 - **Type Safety**: Full type hints and Pydantic models for request/response validation
+- **Fuzzy Search**: Partial matching and synonym search for genes, alleles, and other entities
 - **Retry Logic**: Automatic retry with exponential backoff for transient failures
 - **Authentication**: Support for API key and Okta token authentication
 - **Async Support**: Built on httpx for both sync and async operations
@@ -69,6 +71,25 @@ with client:
         print(f"{gene.curie}: {symbol}")
 ```
 
+### Data Source Selection
+
+The client supports multiple data access methods with automatic fallback. By default, it tries database access first (fastest), then GraphQL, then REST API.
+
+```python
+# Automatic data source selection (default behavior)
+client = AGRCurationAPIClient()
+genes = client.get_genes(taxon="NCBITaxon:6239", limit=100)  # Uses database if available
+
+# Force specific data source
+client = AGRCurationAPIClient(data_source="db")      # Database only
+client = AGRCurationAPIClient(data_source="graphql") # GraphQL only
+client = AGRCurationAPIClient(data_source="api")     # REST API only
+
+# Direct database access for advanced queries
+gene = client.db.get_gene("WB:WBGene00001234")
+allele = client.db.get_allele("WB:WBVar00001234")
+```
+
 ### Working with Genes
 
 ```python
@@ -81,7 +102,7 @@ client = AGRCurationAPIClient()
 wb_genes = client.get_genes(data_provider="WB", limit=100)
 print(f"Found {len(wb_genes)} WormBase genes")
 
-# Get a specific gene by ID
+# Get a specific gene by ID (works with database, GraphQL, or API)
 gene = client.get_gene("WB:WBGene00001234")
 if gene:
     print(f"Gene: {gene.gene_symbol}")
@@ -156,11 +177,45 @@ for allele in wb_alleles:
     symbol = allele.allele_symbol.get("displayText", "") if allele.allele_symbol else ""
     print(f"{allele.curie}: {symbol}")
 
-# Get a specific allele
+# Get a specific allele by ID (works with database, GraphQL, or API)
 allele = client.get_allele("WB:WBVar00001234")
 if allele:
     print(f"Allele: {allele.allele_symbol}")
     print(f"Full name: {allele.allele_full_name}")
+    print(f"Extinction status: {allele.is_extinct}")
+```
+
+### Fuzzy Search
+
+The client supports flexible entity search with partial matching and synonym support. This is particularly useful when users may not know the exact entity name.
+
+```python
+# Search for genes with partial matching
+# Example: Find genes containing "rut" in Drosophila
+results = client.db.search_entities_fuzzy(
+    entity_type='gene',
+    search_pattern='rut',
+    taxon_curie='NCBITaxon:7227',
+    include_synonyms=True,
+    limit=10
+)
+
+for result in results:
+    print(f"{result['entity_curie']}: {result['entity']}")
+    print(f"  Match type: {result['match_type']}")  # exact, starts_with, or contains
+    print(f"  Relevance: {result['relevance']}")    # 1 (best) to 3 (least)
+
+# Search for alleles without synonyms
+allele_results = client.db.search_entities_fuzzy(
+    entity_type='allele',
+    search_pattern='daf',
+    taxon_curie='NCBITaxon:6239',
+    include_synonyms=False,
+    limit=20
+)
+
+# Supported entity types: 'gene', 'allele', 'agm', 'strain', 'genotype', 'fish'
+# Results are ordered by relevance (exact matches first, then starts-with, then contains)
 ```
 
 ### Generic Search
