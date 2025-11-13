@@ -1,5 +1,10 @@
 # AGR Curation API Client
 
+[![Tests](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/tests.yml/badge.svg)](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/tests.yml)
+[![Lint and Type Check](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/lint.yml/badge.svg)](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/lint.yml)
+[![Database Integration Tests](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/database-integration-tests.yml/badge.svg)](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/database-integration-tests.yml)
+[![Claude Code Review](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/claude-code-review.yml/badge.svg)](https://github.com/alliance-genome/agr_curation_api_client/actions/workflows/claude-code-review.yml)
+
 A unified Python client for Alliance of Genome Resources (AGR) curation APIs.
 
 ## Features
