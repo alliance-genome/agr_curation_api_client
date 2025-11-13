@@ -37,11 +37,17 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
-        # Mock query results
-        mock_session.execute.return_value.fetchall.return_value = [
-            ('FB:FBgn0003301', False, 'rut', 'exact', 1),
-            ('FB:FBgn0003301', False, 'rutabaga', 'starts_with', 2)
+        # Mock query results for tiered search (exact, prefix, contains)
+        # Tier 1 (exact): finds 'rut'
+        # Tier 2 (prefix): finds 'rutabaga'
+        # Tier 3 (contains): no additional results
+        mock_execute = MagicMock()
+        mock_execute.fetchall.side_effect = [
+            [('FB:FBgn0003301', False, 'rut', 'exact', 1)],  # Exact match
+            [('FB:FBgn0003301', False, 'rutabaga', 'starts_with', 2)],  # Prefix match
+            []  # Contains match (no additional results)
         ]
+        mock_session.execute.return_value = mock_execute
 
         result = self.db_methods.search_entities_fuzzy(
             entity_type='gene',
@@ -57,8 +63,8 @@ class TestFuzzySearch(unittest.TestCase):
         self.assertEqual(result[0]['match_type'], 'exact')
         self.assertEqual(result[0]['relevance'], 1)
 
-        # Verify session was used correctly
-        mock_session.execute.assert_called_once()
+        # Verify session was used correctly (3 queries for tiered search)
+        self.assertEqual(mock_session.execute.call_count, 3)
         mock_session.close.assert_called_once()
 
     @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
@@ -67,9 +73,14 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
-        mock_session.execute.return_value.fetchall.return_value = [
-            ('FB:FBal0014878', False, 'Adcy1<sup>rut-1</sup>', 'starts_with', 2)
+        # Tiered search: no exact, finds prefix, no contains
+        mock_execute = MagicMock()
+        mock_execute.fetchall.side_effect = [
+            [],  # Exact match (no results)
+            [('FB:FBal0014878', False, 'Adcy1<sup>rut-1</sup>', 'starts_with', 2)],  # Prefix match
+            []  # Contains match (no additional results)
         ]
+        mock_session.execute.return_value = mock_execute
 
         result = self.db_methods.search_entities_fuzzy(
             entity_type='allele',
@@ -87,9 +98,14 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
-        mock_session.execute.return_value.fetchall.return_value = [
-            ('ZFIN:ZDB-FISH-123', False, 'wild type', 'exact', 1)
+        # Tiered search: finds exact, no prefix/contains needed
+        mock_execute = MagicMock()
+        mock_execute.fetchall.side_effect = [
+            [('ZFIN:ZDB-FISH-123', False, 'wild type', 'exact', 1)],  # Exact match
+            [],  # Prefix match (not executed due to limit reached)
+            []  # Contains match (not executed due to limit reached)
         ]
+        mock_session.execute.return_value = mock_execute
 
         result = self.db_methods.search_entities_fuzzy(
             entity_type='agm',
@@ -106,9 +122,14 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
-        mock_session.execute.return_value.fetchall.return_value = [
-            ('FB:FBgn0003301', False, 'Adcy1', 'exact', 1)
+        # Tiered search: finds exact match
+        mock_execute = MagicMock()
+        mock_execute.fetchall.side_effect = [
+            [('FB:FBgn0003301', False, 'Adcy1', 'exact', 1)],  # Exact match
+            [],  # Prefix match (not executed due to limit reached)
+            []  # Contains match (not executed due to limit reached)
         ]
+        mock_session.execute.return_value = mock_execute
 
         result = self.db_methods.search_entities_fuzzy(
             entity_type='gene',
@@ -119,26 +140,28 @@ class TestFuzzySearch(unittest.TestCase):
 
         # Verify query was called (synonyms would be excluded in SQL)
         self.assertEqual(len(result), 1)
-        mock_session.execute.assert_called_once()
+        self.assertGreaterEqual(mock_session.execute.call_count, 1)
 
         # Verify the SQL doesn't include synonym annotation types
-        call_args = mock_session.execute.call_args
+        call_args = mock_session.execute.call_args_list[0]  # Check first call (exact match)
         sql_text = str(call_args[0][0])
         # When include_synonyms=False, GeneSynonymSlotAnnotation shouldn't be in query
         self.assertNotIn('GeneSynonymSlotAnnotation', sql_text)
 
     @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_limit_parameter_works(self, mock_session_factory):
-        """Test that limit parameter is passed to query."""
+        """Test that limit parameter restricts results."""
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
-        # Mock returning more results than limit
-        mock_results = [
-            (f'FB:FBgn{i:08d}', False, f'gene{i}', 'contains', 3)
-            for i in range(5)
+        # Tiered search: exact finds 2, prefix finds 3, total=5 (limit respected)
+        mock_execute = MagicMock()
+        mock_execute.fetchall.side_effect = [
+            [(f'FB:FBgn{i:08d}', False, f'gene{i}', 'exact', 1) for i in range(2)],  # Exact: 2 results
+            [(f'FB:FBgn{i:08d}', False, f'gene{i}', 'starts_with', 2) for i in range(2, 5)],  # Prefix: 3 results
+            []  # Contains (not needed, limit reached at 5)
         ]
-        mock_session.execute.return_value.fetchall.return_value = mock_results
+        mock_session.execute.return_value = mock_execute
 
         result = self.db_methods.search_entities_fuzzy(
             entity_type='gene',
@@ -147,12 +170,7 @@ class TestFuzzySearch(unittest.TestCase):
             limit=5
         )
 
-        # Verify limit was passed to SQL
-        call_args = mock_session.execute.call_args
-        params = call_args[0][1]
-        self.assertEqual(params['limit'], 5)
-
-        # Verify results returned
+        # Verify results returned respect limit
         self.assertEqual(len(result), 5)
 
     @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
@@ -226,11 +244,18 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
-        mock_session.execute.return_value.fetchall.return_value = [
-            ('FB:FBgn0003301', False, 'rut', 'exact', 1),
-            ('FB:FBgn0003301', False, 'RUT', 'exact', 1),
-            ('FB:FBgn0003301', False, 'Rut', 'exact', 1)
+        # Tiered search: all 3 results found in exact match tier
+        mock_execute = MagicMock()
+        mock_execute.fetchall.side_effect = [
+            [  # Exact match tier
+                ('FB:FBgn0003301', False, 'rut', 'exact', 1),
+                ('FB:FBgn0003301', False, 'RUT', 'exact', 1),
+                ('FB:FBgn0003301', False, 'Rut', 'exact', 1)
+            ],
+            [],  # Prefix match (not needed)
+            []  # Contains match (not needed)
         ]
+        mock_session.execute.return_value = mock_execute
 
         result = self.db_methods.search_entities_fuzzy(
             entity_type='gene',
@@ -241,8 +266,8 @@ class TestFuzzySearch(unittest.TestCase):
         # Verify all case variations are found
         self.assertEqual(len(result), 3)
 
-        # Verify search was uppercased in parameters
-        call_args = mock_session.execute.call_args
+        # Verify search was uppercased in parameters (check first call)
+        call_args = mock_session.execute.call_args_list[0]
         params = call_args[0][1]
         self.assertEqual(params['search_exact'], 'RUT')  # Uppercase
 

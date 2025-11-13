@@ -103,6 +103,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+test_venv/
 
 # Spyder project settings
 .spyderproject
@@ -137,6 +138,9 @@ Thumbs.db
 *.token
 okta_token
 tmp/
+
+# Local database tunnel
+scripts/local_db_tunnel_env.sh
 
 # Documentation
 CLAUDE.md
