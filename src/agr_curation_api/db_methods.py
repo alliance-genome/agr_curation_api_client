@@ -1119,6 +1119,195 @@ class DatabaseMethods:
         finally:
             session.close()
 
+    def search_entities_fuzzy(
+        self,
+        entity_type: str,
+        search_pattern: str,
+        taxon_curie: str,
+        include_synonyms: bool = True,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Search entities with fuzzy/partial matching and synonym support.
+
+        This method enables flexible searching where partial matches are supported
+        (e.g., "rut" will find "rutabaga"). Results are ordered by relevance:
+        exact match > starts with > contains.
+
+        Args:
+            entity_type: Type of entity ('gene', 'allele', 'agm', 'construct')
+            search_pattern: Search term (e.g., 'rut', 'rutabaga')
+            taxon_curie: NCBI Taxon CURIE (e.g., 'NCBITaxon:7227' for Drosophila)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 100)
+
+        Returns:
+            List of dictionaries with keys:
+                - entity_curie: Primary external ID
+                - is_obsolete: Whether entity is obsolete
+                - entity: Matched display text
+                - match_type: Type of match ('exact', 'starts_with', 'contains')
+                - relevance: Relevance score (1=exact, 2=starts with, 3=contains)
+
+        Example:
+            # Find Drosophila genes matching "rut"
+            results = db.search_entities_fuzzy(
+                'gene', 'rut', 'NCBITaxon:7227'
+            )
+            # Returns: rutabaga gene (FB:FBgn0003301) with synonym matches
+
+        Notes:
+            - Case-insensitive search
+            - Searches symbols, full names, systematic names, and synonyms
+            - Performance: No index on displaytext, so LIMIT is enforced
+
+            TODO - Future Enhancements:
+            - This method is currently DATABASE-ONLY (no API or GraphQL implementation)
+            - May be unified with ABC autocomplete functionality (pending discussion)
+            - API/GraphQL implementations may be added later for complete data source fallback
+            - When unified, should follow the db -> graphql -> api fallback pattern used in client.py
+        """
+        if not search_pattern:
+            return []
+
+        session = self._create_session()
+        try:
+            entity_type = entity_type.lower()
+            search_upper = search_pattern.upper()
+
+            # Build SlotAnnotation types list based on entity type
+            if entity_type == 'gene':
+                annotation_types = [
+                    "'GeneSymbolSlotAnnotation'",
+                    "'GeneSystematicNameSlotAnnotation'",
+                    "'GeneFullNameSlotAnnotation'"
+                ]
+                if include_synonyms:
+                    annotation_types.append("'GeneSynonymSlotAnnotation'")
+                annotation_types_str = ", ".join(annotation_types)
+
+                sql_query = text(f"""
+                SELECT DISTINCT
+                    be.primaryexternalid,
+                    sa.obsolete,
+                    sa.displaytext,
+                    CASE
+                        WHEN UPPER(sa.displaytext) = :search_exact THEN 'exact'
+                        WHEN UPPER(sa.displaytext) LIKE :search_starts THEN 'starts_with'
+                        ELSE 'contains'
+                    END as match_type,
+                    CASE
+                        WHEN UPPER(sa.displaytext) = :search_exact THEN 1
+                        WHEN UPPER(sa.displaytext) LIKE :search_starts THEN 2
+                        ELSE 3
+                    END as relevance
+                FROM biologicalentity be
+                JOIN gene g ON be.id = g.id
+                JOIN slotannotation sa ON be.id = sa.singlegene_id
+                JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE sa.slotannotationtype IN ({annotation_types_str})
+                AND sa.obsolete = false
+                AND UPPER(sa.displaytext) LIKE :search_contains
+                AND ot.curie = :taxon
+                ORDER BY relevance, be.primaryexternalid
+                LIMIT :limit
+                """)
+
+            elif entity_type == 'allele':
+                annotation_types = ["'AlleleSymbolSlotAnnotation'"]
+                if include_synonyms:
+                    annotation_types.extend([
+                        "'AlleleFullNameSlotAnnotation'",
+                        "'AlleleSynonymSlotAnnotation'"
+                    ])
+                annotation_types_str = ", ".join(annotation_types)
+
+                sql_query = text(f"""
+                SELECT DISTINCT
+                    be.primaryexternalid,
+                    sa.obsolete,
+                    sa.displaytext,
+                    CASE
+                        WHEN UPPER(sa.displaytext) = :search_exact THEN 'exact'
+                        WHEN UPPER(sa.displaytext) LIKE :search_starts THEN 'starts_with'
+                        ELSE 'contains'
+                    END as match_type,
+                    CASE
+                        WHEN UPPER(sa.displaytext) = :search_exact THEN 1
+                        WHEN UPPER(sa.displaytext) LIKE :search_starts THEN 2
+                        ELSE 3
+                    END as relevance
+                FROM biologicalentity be
+                JOIN allele a ON be.id = a.id
+                JOIN slotannotation sa ON be.id = sa.singleallele_id
+                JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE sa.slotannotationtype IN ({annotation_types_str})
+                AND sa.obsolete = false
+                AND UPPER(sa.displaytext) LIKE :search_contains
+                AND ot.curie = :taxon
+                ORDER BY relevance, be.primaryexternalid
+                LIMIT :limit
+                """)
+
+            elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
+                annotation_types = [
+                    "'AgmFullNameSlotAnnotation'",
+                    "'AgmSecondaryIdSlotAnnotation'"
+                ]
+                if include_synonyms:
+                    annotation_types.append("'AgmSynonymSlotAnnotation'")
+                annotation_types_str = ", ".join(annotation_types)
+
+                sql_query = text(f"""
+                SELECT DISTINCT
+                    be.primaryexternalid,
+                    sa.obsolete,
+                    sa.displaytext,
+                    CASE
+                        WHEN UPPER(sa.displaytext) = :search_exact THEN 'exact'
+                        WHEN UPPER(sa.displaytext) LIKE :search_starts THEN 'starts_with'
+                        ELSE 'contains'
+                    END as match_type,
+                    CASE
+                        WHEN UPPER(sa.displaytext) = :search_exact THEN 1
+                        WHEN UPPER(sa.displaytext) LIKE :search_starts THEN 2
+                        ELSE 3
+                    END as relevance
+                FROM biologicalentity be
+                JOIN affectedgenomicmodel agm ON be.id = agm.id
+                JOIN slotannotation sa ON be.id = sa.singleagm_id
+                JOIN ontologyterm ot ON be.taxon_id = ot.id
+                WHERE sa.slotannotationtype IN ({annotation_types_str})
+                AND sa.obsolete = false
+                AND UPPER(sa.displaytext) LIKE :search_contains
+                AND ot.curie = :taxon
+                ORDER BY relevance, be.primaryexternalid
+                LIMIT :limit
+                """)
+
+            else:
+                raise AGRAPIError(f"Unsupported entity_type for fuzzy search: '{entity_type}'")
+
+            rows = session.execute(sql_query, {
+                'search_exact': search_upper,
+                'search_starts': f'{search_upper}%',
+                'search_contains': f'%{search_upper}%',
+                'taxon': taxon_curie,
+                'limit': limit
+            }).fetchall()
+
+            return [{
+                "entity_curie": row[0],
+                "is_obsolete": row[1],
+                "entity": row[2],
+                "match_type": row[3],
+                "relevance": row[4]
+            } for row in rows]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
     def map_entity_curies_to_info(
         self,
         entity_type: str,
