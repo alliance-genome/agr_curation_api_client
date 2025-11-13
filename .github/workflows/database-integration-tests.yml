@@ -50,7 +50,7 @@ jobs:
 
           # Get configuration
           CONFIG=$(aws secretsmanager get-secret-value \
-            --secret-id /claude-code-pr/config \
+            --secret-id /claude-code-pr/curation-db-production/config \
             --query SecretString --output text) || {
             echo "❌ Failed to retrieve config from AWS Secrets Manager"
             exit 1
@@ -65,9 +65,10 @@ jobs:
           DB_PORT=$(echo $CONFIG | jq -r .db_port)
           DB_NAME=$(echo $CONFIG | jq -r .db_name)
           DB_USER=$(echo $CONFIG | jq -r .db_user)
+          DB_PASSWORD=$(echo $CONFIG | jq -r .db_password)
 
           # Validate all required fields are present
-          for var in SSM_INSTANCE_ID DB_HOST DB_PORT DB_NAME DB_USER; do
+          for var in SSM_INSTANCE_ID DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD; do
             if [ -z "${!var}" ] || [ "${!var}" = "null" ]; then
               echo "❌ CONFIG missing or empty: $var"
               exit 1
@@ -80,6 +81,7 @@ jobs:
           echo "::add-mask::$SSM_INSTANCE_ID"
           echo "::add-mask::$DB_USER"
           echo "::add-mask::$DB_NAME"
+          echo "::add-mask::$DB_PASSWORD"
 
           # Output validated values
           echo "ssm_instance_id=$SSM_INSTANCE_ID" >> $GITHUB_OUTPUT
@@ -87,6 +89,7 @@ jobs:
           echo "db_port=$DB_PORT" >> $GITHUB_OUTPUT
           echo "db_name=$DB_NAME" >> $GITHUB_OUTPUT
           echo "db_user=$DB_USER" >> $GITHUB_OUTPUT
+          echo "db_password=$DB_PASSWORD" >> $GITHUB_OUTPUT
 
       - name: Cache SSM Plugin
         id: cache-ssm-plugin
@@ -198,21 +201,13 @@ jobs:
             sleep $SLEEP_INTERVAL
           done
 
-      - name: Get database password
-        id: db-password
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2.0.6
-        with:
-          secret-ids: |
-            DB_CREDS,curation-db-readonly
-          parse-json-secrets: true
-
       - name: Run database integration tests
         env:
           PERSISTENT_STORE_DB_HOST: localhost
           PERSISTENT_STORE_DB_PORT: ${{ steps.tunnel.outputs.local_port }}
           PERSISTENT_STORE_DB_NAME: ${{ steps.db-config.outputs.db_name }}
           PERSISTENT_STORE_DB_USERNAME: ${{ steps.db-config.outputs.db_user }}
-          PERSISTENT_STORE_DB_PASSWORD: ${{ env.DB_CREDS_PASSWORD }}
+          PERSISTENT_STORE_DB_PASSWORD: ${{ steps.db-config.outputs.db_password }}
           TMP_PATH: /tmp/test_data
         run: |
           set -euo pipefail
