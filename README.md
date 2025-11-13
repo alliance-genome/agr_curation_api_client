@@ -189,6 +189,24 @@ if allele:
 
 The client supports flexible entity search with partial matching and synonym support. This is particularly useful when users may not know the exact entity name.
 
+**Fuzzy Search vs Generic Search:**
+
+- **Fuzzy Search** (`search_entities_fuzzy`): Best for user-friendly, autocomplete-style searching
+  - Database-only (direct SQL queries)
+  - Partial text matching: "rut" finds "rutabaga", "RUT", "rut-1"
+  - Automatically searches symbols, full names, and synonyms
+  - Returns results with relevance scoring (exact > starts-with > contains)
+  - Use when: searching by partial names, building autocomplete, finding entities by common/historical names
+  - Supported types: gene, allele, agm, strain, genotype, fish
+
+- **Generic Search** (`search_entities`): Best for programmatic queries with known field structures
+  - REST API-based with structured filters
+  - Exact field matching with precise field paths (e.g., "geneSymbol.displayText")
+  - Supports complex boolean filter logic
+  - Returns complete entity objects
+  - Use when: you know exact field names, need complex filters, require full entity data
+  - Supports all entity types available in the API
+
 ```python
 # Search for genes with partial matching
 # Example: Find genes containing "rut" in Drosophila
