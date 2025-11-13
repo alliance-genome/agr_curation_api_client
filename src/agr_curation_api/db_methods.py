@@ -951,6 +951,12 @@ class DatabaseMethods:
             - Case-insensitive search
             - Searches symbols, full names, systematic names, and synonyms
             - Performance: No index on displaytext, so LIMIT is enforced
+
+            TODO - Future Enhancements:
+            - This method is currently DATABASE-ONLY (no API or GraphQL implementation)
+            - May be unified with ABC autocomplete functionality (pending discussion)
+            - API/GraphQL implementations may be added later for complete data source fallback
+            - When unified, should follow the db -> graphql -> api fallback pattern used in client.py
         """
         if not search_pattern:
             return []
