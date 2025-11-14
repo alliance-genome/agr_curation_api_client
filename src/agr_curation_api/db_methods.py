@@ -1119,7 +1119,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def search_entities_fuzzy(
+    def search_entities(
         self,
         entity_type: str,
         search_pattern: str,
@@ -1127,7 +1127,7 @@ class DatabaseMethods:
         include_synonyms: bool = True,
         limit: int = 20
     ) -> List[Dict[str, Any]]:
-        """Search entities with fuzzy/partial matching and synonym support.
+        """Search entities with partial matching and synonym support.
 
         This method enables flexible searching where partial matches are supported
         (e.g., "rut" will find "rutabaga"). Results are ordered by relevance:
@@ -1150,7 +1150,7 @@ class DatabaseMethods:
 
         Example:
             # Find Drosophila genes matching "rut"
-            results = db.search_entities_fuzzy(
+            results = db.search_entities(
                 'gene', 'rut', 'NCBITaxon:7227'
             )
             # Returns: rutabaga gene (FB:FBgn0003301) with synonym matches
@@ -1211,7 +1211,7 @@ class DatabaseMethods:
                 if include_synonyms:
                     annotation_types.append("'AgmSynonymSlotAnnotation'")
             else:
-                raise AGRAPIError(f"Unsupported entity_type for fuzzy search: '{entity_type}'")
+                raise AGRAPIError(f"Unsupported entity_type for search: '{entity_type}'")
 
             annotation_types_str = ", ".join(annotation_types)
             results = []
@@ -1531,6 +1531,863 @@ class DatabaseMethods:
             "match_type": row[3],
             "relevance": row[4]
         } for row in rows]
+
+    def get_ontology_term(
+        self,
+        curie: str
+    ) -> Optional['OntologyTermResult']:
+        """Get a specific ontology term by CURIE from the database.
+
+        This performs a direct lookup by CURIE with synonym aggregation.
+
+        Args:
+            curie: Ontology term CURIE (e.g., 'WBbt:0005062', 'GO:0005634')
+
+        Returns:
+            OntologyTermResult object with term details and synonyms, or None if not found
+
+        Example:
+            term = db.get_ontology_term('WBbt:0005062')
+            if term:
+                print(f"Name: {term.name}")
+                print(f"Synonyms: {', '.join(term.synonyms)}")
+        """
+        from agr_curation_api.models import OntologyTermResult
+
+        session = self._create_session()
+        try:
+            sql_query = text("""
+            SELECT
+                ot.curie,
+                ot.name,
+                ot.namespace,
+                ot.definition,
+                ot.ontologytermtype,
+                ARRAY_AGG(DISTINCT ots.name) FILTER (WHERE ots.name IS NOT NULL) as synonyms
+            FROM
+                ontologyterm ot
+                LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+            WHERE
+                ot.curie = :curie
+            AND
+                ot.obsolete = false
+            GROUP BY
+                ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
+            """)
+
+            row = session.execute(sql_query, {'curie': curie}).fetchone()
+
+            if row is None:
+                return None
+
+            return OntologyTermResult(
+                curie=row[0],
+                name=row[1],
+                namespace=row[2] or '',
+                definition=row[3],
+                ontology_type=row[4],
+                synonyms=row[5] or []
+            )
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for ontology term {curie}: {str(e)}")
+        finally:
+            session.close()
+
+    def search_ontology_terms(
+        self,
+        term: str,
+        ontology_type: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search ontology terms with partial matching and synonym support.
+
+        This method enables flexible searching where partial matches are supported
+        (e.g., "linker" will find "linker cell"). Results are ordered by relevance:
+        exact match > starts with > contains.
+
+        Args:
+            term: Search term (e.g., 'linker cell', 'L3 larval stage')
+            ontology_type: Ontology term type (e.g., 'WBBTTerm', 'GOTerm', 'WBLSTerm')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Find C. elegans anatomy terms matching "linker"
+            results = db.search_ontology_terms('linker', 'WBBTTerm')
+
+        Notes:
+            - Case-insensitive search
+            - Searches term names and synonyms (if enabled)
+            - Performance: Uses tiered search strategy (exact → prefix → contains)
+                - Tier 1 (Exact): UPPER(name) = 'PATTERN' (uses B-tree index, 5-20ms)
+                - Tier 2 (Prefix): UPPER(name) LIKE 'PATTERN%' (uses B-tree index, 5-20ms)
+                - Tier 3 (Contains): UPPER(name) LIKE '%PATTERN%' (sequential scan, ~990ms)
+            - Most queries hit Tier 1 or 2 (5-10x faster on average)
+            - Tier 3 fallback ensures comprehensive results
+
+            TODO - Future Enhancements:
+            - Phase 2 optimization: Add pg_trgm extension for 50-100x improvement (all queries 10-30ms)
+        """
+        from agr_curation_api.models import OntologyTermResult
+
+        if not term:
+            return []
+
+        session = self._create_session()
+        try:
+            search_upper = term.upper()
+            results = []
+
+            # If exact_match is True, only do Tier 1
+            if exact_match:
+                exact_results = self._search_ontology_exact(
+                    session, search_upper, ontology_type, include_synonyms
+                )
+                results.extend(exact_results)
+            else:
+                # Tier 1: Try exact match first (fast - uses B-tree index)
+                exact_results = self._search_ontology_exact(
+                    session, search_upper, ontology_type, include_synonyms
+                )
+                results.extend(exact_results)
+
+                # If we have enough results, return early
+                if len(results) >= limit:
+                    return results[:limit]
+
+                # Tier 2: Try prefix match (fast - uses B-tree index)
+                exclude_curies = {r.curie for r in results}
+                remaining_limit = limit - len(results)
+                prefix_results = self._search_ontology_prefix(
+                    session, search_upper, ontology_type, include_synonyms,
+                    exclude_curies, remaining_limit
+                )
+                results.extend(prefix_results)
+
+                # If we have enough results, return early
+                if len(results) >= limit:
+                    return results[:limit]
+
+                # Tier 3: Fall back to contains match (slow - sequential scan)
+                exclude_curies = {r.curie for r in results}
+                remaining_limit = limit - len(results)
+                contains_results = self._search_ontology_contains(
+                    session, search_upper, ontology_type, include_synonyms,
+                    exclude_curies, remaining_limit
+                )
+                results.extend(contains_results)
+
+            return results[:limit]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def _search_ontology_exact(
+        self,
+        session: Session,
+        search_upper: str,
+        ontology_type: str,
+        include_synonyms: bool
+    ) -> List['OntologyTermResult']:
+        """Tier 1: Exact match search for ontology terms using B-tree index.
+
+        Uses UPPER(name) = 'PATTERN' which can use the functional B-tree index.
+        Expected performance: 5-20ms
+
+        Args:
+            session: SQLAlchemy session
+            search_upper: Uppercase search pattern
+            ontology_type: Ontology term type (e.g., 'WBBTTerm')
+            include_synonyms: Whether to include synonym matches
+
+        Returns:
+            List of OntologyTermResult objects
+        """
+        from agr_curation_api.models import OntologyTermResult
+
+        if include_synonyms:
+            sql_query = text("""
+                WITH matching_terms AS (
+                    SELECT DISTINCT ot.id, ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
+                    FROM ontologyterm ot
+                    LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                    LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                    WHERE ot.ontologytermtype = :ontology_type
+                    AND ot.obsolete = false
+                    AND (UPPER(ot.name) = :search_exact OR UPPER(s.name) = :search_exact)
+                )
+                SELECT
+                    mt.curie,
+                    mt.name,
+                    mt.namespace,
+                    mt.definition,
+                    mt.ontologytermtype,
+                    ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
+                FROM matching_terms mt
+                LEFT JOIN ontologyterm_synonym ots ON mt.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
+                ORDER BY mt.name
+            """)
+        else:
+            sql_query = text("""
+                SELECT
+                    ot.curie,
+                    ot.name,
+                    ot.namespace,
+                    ot.definition,
+                    ot.ontologytermtype,
+                    ARRAY[]::text[] as synonyms
+                FROM ontologyterm ot
+                WHERE ot.ontologytermtype = :ontology_type
+                AND ot.obsolete = false
+                AND UPPER(ot.name) = :search_exact
+                ORDER BY ot.name
+            """)
+
+        rows = session.execute(sql_query, {
+            'search_exact': search_upper,
+            'ontology_type': ontology_type
+        }).fetchall()
+
+        return [OntologyTermResult(
+            curie=row[0],
+            name=row[1],
+            namespace=row[2] or '',
+            definition=row[3],
+            ontology_type=row[4],
+            synonyms=row[5] or []
+        ) for row in rows]
+
+    def _search_ontology_prefix(
+        self,
+        session: Session,
+        search_upper: str,
+        ontology_type: str,
+        include_synonyms: bool,
+        exclude_curies: Set[str],
+        limit: int
+    ) -> List['OntologyTermResult']:
+        """Tier 2: Prefix match search for ontology terms using B-tree index.
+
+        Uses UPPER(name) LIKE 'PATTERN%' which can use the functional B-tree index.
+        Expected performance: 5-20ms
+
+        Args:
+            session: SQLAlchemy session
+            search_upper: Uppercase search pattern
+            ontology_type: Ontology term type
+            include_synonyms: Whether to include synonym matches
+            exclude_curies: Set of CURIEs to exclude (from exact matches)
+            limit: Maximum results to return
+
+        Returns:
+            List of OntologyTermResult objects
+        """
+        from agr_curation_api.models import OntologyTermResult
+
+        # Build exclusion clause
+        if exclude_curies:
+            exclude_clause = "AND ot.curie NOT IN :exclude_curies"
+        else:
+            exclude_clause = ""
+
+        if include_synonyms:
+            sql_query = text(f"""
+                WITH matching_terms AS (
+                    SELECT DISTINCT ot.id, ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
+                    FROM ontologyterm ot
+                    LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                    LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                    WHERE ot.ontologytermtype = :ontology_type
+                    AND ot.obsolete = false
+                    AND (UPPER(ot.name) LIKE :search_starts OR UPPER(s.name) LIKE :search_starts)
+                    AND (UPPER(ot.name) != :search_exact AND (s.name IS NULL OR UPPER(s.name) != :search_exact))
+                    {exclude_clause}
+                    LIMIT :limit
+                )
+                SELECT
+                    mt.curie,
+                    mt.name,
+                    mt.namespace,
+                    mt.definition,
+                    mt.ontologytermtype,
+                    ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
+                FROM matching_terms mt
+                LEFT JOIN ontologyterm_synonym ots ON mt.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
+                ORDER BY mt.name
+            """)
+        else:
+            sql_query = text(f"""
+                SELECT
+                    ot.curie,
+                    ot.name,
+                    ot.namespace,
+                    ot.definition,
+                    ot.ontologytermtype,
+                    ARRAY[]::text[] as synonyms
+                FROM ontologyterm ot
+                WHERE ot.ontologytermtype = :ontology_type
+                AND ot.obsolete = false
+                AND UPPER(ot.name) LIKE :search_starts
+                AND UPPER(ot.name) != :search_exact
+                {exclude_clause}
+                ORDER BY ot.name
+                LIMIT :limit
+            """)
+
+        params = {
+            'search_starts': f'{search_upper}%',
+            'search_exact': search_upper,
+            'ontology_type': ontology_type,
+            'limit': limit
+        }
+        if exclude_curies:
+            params['exclude_curies'] = tuple(exclude_curies)
+
+        rows = session.execute(sql_query, params).fetchall()
+
+        return [OntologyTermResult(
+            curie=row[0],
+            name=row[1],
+            namespace=row[2] or '',
+            definition=row[3],
+            ontology_type=row[4],
+            synonyms=row[5] or []
+        ) for row in rows]
+
+    def _search_ontology_contains(
+        self,
+        session: Session,
+        search_upper: str,
+        ontology_type: str,
+        include_synonyms: bool,
+        exclude_curies: Set[str],
+        limit: int
+    ) -> List['OntologyTermResult']:
+        """Tier 3: Contains match search for ontology terms.
+
+        Uses UPPER(name) LIKE '%PATTERN%' which CANNOT use B-tree index.
+        Requires sequential scan. Expected performance: ~990ms
+
+        Args:
+            session: SQLAlchemy session
+            search_upper: Uppercase search pattern
+            ontology_type: Ontology term type
+            include_synonyms: Whether to include synonym matches
+            exclude_curies: Set of CURIEs to exclude (from exact/prefix matches)
+            limit: Maximum results to return
+
+        Returns:
+            List of OntologyTermResult objects
+        """
+        from agr_curation_api.models import OntologyTermResult
+
+        if include_synonyms:
+            # Build exclusion clause for CTE query (use mt.curie since we're in the outer query)
+            if exclude_curies:
+                exclude_clause = "AND mt.curie NOT IN :exclude_curies"
+            else:
+                exclude_clause = ""
+
+            sql_query = text(f"""
+                WITH matching_terms AS MATERIALIZED (
+                    SELECT DISTINCT
+                        ot.id,
+                        ot.curie,
+                        ot.name,
+                        ot.namespace,
+                        ot.definition,
+                        ot.ontologytermtype
+                    FROM ontologyterm ot
+                    LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                    LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                    WHERE ot.ontologytermtype = :ontology_type
+                    AND ot.obsolete = false
+                    AND (UPPER(ot.name) LIKE :search_contains OR UPPER(s.name) LIKE :search_contains)
+                    AND (UPPER(ot.name) NOT LIKE :search_starts AND (s.name IS NULL OR UPPER(s.name) NOT LIKE :search_starts))
+                )
+                SELECT
+                    mt.curie,
+                    mt.name,
+                    mt.namespace,
+                    mt.definition,
+                    mt.ontologytermtype,
+                    ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
+                FROM matching_terms mt
+                LEFT JOIN ontologyterm_synonym ots ON mt.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                WHERE true
+                {exclude_clause}
+                GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
+                ORDER BY mt.name
+                LIMIT :limit
+            """)
+        else:
+            # Build exclusion clause for direct query (use ot.curie since no CTE)
+            if exclude_curies:
+                exclude_clause = "AND ot.curie NOT IN :exclude_curies"
+            else:
+                exclude_clause = ""
+
+            sql_query = text(f"""
+                SELECT
+                    ot.curie,
+                    ot.name,
+                    ot.namespace,
+                    ot.definition,
+                    ot.ontologytermtype,
+                    ARRAY[]::text[] as synonyms
+                FROM ontologyterm ot
+                WHERE ot.ontologytermtype = :ontology_type
+                AND ot.obsolete = false
+                AND UPPER(ot.name) LIKE :search_contains
+                AND UPPER(ot.name) NOT LIKE :search_starts
+                {exclude_clause}
+                ORDER BY ot.name
+                LIMIT :limit
+            """)
+
+        params = {
+            'search_contains': f'%{search_upper}%',
+            'search_starts': f'{search_upper}%',
+            'ontology_type': ontology_type,
+            'limit': limit
+        }
+        if exclude_curies:
+            params['exclude_curies'] = tuple(exclude_curies)
+
+        rows = session.execute(sql_query, params).fetchall()
+
+        return [OntologyTermResult(
+            curie=row[0],
+            name=row[1],
+            namespace=row[2] or '',
+            definition=row[3],
+            ontology_type=row[4],
+            synonyms=row[5] or []
+        ) for row in rows]
+
+    def search_anatomy_terms(
+        self,
+        term: str,
+        data_provider: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search anatomy ontology terms with organism-aware type mapping.
+
+        Convenience wrapper that automatically maps data_provider to the correct
+        anatomy ontology type (WBBTTerm for WB, FBCVTerm for FB, etc.).
+
+        Args:
+            term: Search term (e.g., 'linker cell', 'pharynx')
+            data_provider: Data provider code ('WB', 'FB', 'ZFIN', 'MGI', 'RGD', 'SGD', 'XB')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Find C. elegans anatomy terms matching "linker"
+            results = db.search_anatomy_terms('linker', 'WB')
+            # Returns: [OntologyTermResult(curie='WBbt:0005062', name='linker cell', ...)]
+
+        Raises:
+            AGRAPIError: If data_provider is not supported
+        """
+        # Map data_provider to anatomy ontology type
+        provider_to_anatomy_type = {
+            'WB': 'WBBTTerm',      # C. elegans - WormBase Anatomy
+            'FB': 'FBCVTerm',      # D. melanogaster - FlyBase Controlled Vocabulary
+            'ZFIN': 'ZFATerm',     # D. rerio (zebrafish) - ZFIN Anatomy
+            'MGI': 'EMAPATerm',    # M. musculus (mouse) - Mouse Anatomy (embryonic)
+            'RGD': 'UBERONTerm',   # R. norvegicus (rat) - Uberon (cross-species)
+            'SGD': 'UBERONTerm',   # S. cerevisiae (yeast) - Uberon (cross-species)
+            'XB': 'XBATerm',       # X. laevis (xenopus) - Xenbase Anatomy (FIXED TYPO)
+        }
+
+        # Additional anatomy ontology support (can be accessed directly)
+        # MATerm - Mouse Adult Anatomy
+        # BTOTerm - BRENDA Tissue Ontology
+        # CLTerm - Cell Ontology
+        # XBEDTerm - Xenopus Embryonic Development
+
+        ontology_type = provider_to_anatomy_type.get(data_provider.upper())
+        if not ontology_type:
+            raise AGRAPIError(
+                f"Unsupported data_provider for anatomy search: '{data_provider}'. "
+                f"Supported: {', '.join(provider_to_anatomy_type.keys())}"
+            )
+
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type=ontology_type,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit
+        )
+
+    def search_life_stage_terms(
+        self,
+        term: str,
+        data_provider: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search life stage ontology terms with organism-aware type mapping.
+
+        Convenience wrapper that automatically maps data_provider to the correct
+        life stage ontology type (WBLSTerm for WB, FBDVTerm for FB, etc.).
+
+        Args:
+            term: Search term (e.g., 'L3 larval stage', 'adult')
+            data_provider: Data provider code ('WB', 'FB', 'ZFIN', 'MGI', 'XB')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Find C. elegans life stages matching "L3"
+            results = db.search_life_stage_terms('L3', 'WB')
+            # Returns: [OntologyTermResult(curie='WBls:0000035', name='L3 larval stage', ...)]
+
+        Raises:
+            AGRAPIError: If data_provider is not supported
+        """
+        # Map data_provider to life stage ontology type
+        provider_to_stage_type = {
+            'WB': 'WBLSTerm',      # C. elegans - WormBase Life Stage
+            'FB': 'FBDVTerm',      # D. melanogaster - FlyBase Development
+            'ZFIN': 'ZFSTerm',     # D. rerio (zebrafish) - ZFIN Stages
+            'MGI': 'MMUSDVTerm',   # M. musculus (mouse) - Mouse Developmental Stages (FIXED CASING)
+            'XB': 'XBSTerm',       # X. laevis (xenopus) - Xenbase Stages
+        }
+
+        # Additional life stage ontology support (can be accessed directly)
+        # XBEDTerm - Xenopus Embryonic Development
+
+        ontology_type = provider_to_stage_type.get(data_provider.upper())
+        if not ontology_type:
+            raise AGRAPIError(
+                f"Unsupported data_provider for life stage search: '{data_provider}'. "
+                f"Supported: {', '.join(provider_to_stage_type.keys())}"
+            )
+
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type=ontology_type,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit
+        )
+
+    def search_go_terms(
+        self,
+        term: str,
+        go_aspect: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search Gene Ontology terms with optional aspect filtering.
+
+        Args:
+            term: Search term (e.g., 'nucleus', 'apoptosis')
+            go_aspect: Optional GO aspect to filter by:
+                - 'cellular_component' (e.g., nucleus, cytoplasm)
+                - 'biological_process' (e.g., apoptosis, cell division)
+                - 'molecular_function' (e.g., kinase activity, binding)
+                If None, searches all GO aspects (default)
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance,
+            filtered by namespace if go_aspect is specified
+
+        Example:
+            # Find cellular component GO terms matching "nucleus"
+            results = db.search_go_terms('nucleus', go_aspect='cellular_component')
+            # Returns: [OntologyTermResult(curie='GO:0005634', name='nucleus', ...)]
+
+        Notes:
+            - GO terms are organism-agnostic (same terms used across all species)
+            - If go_aspect is specified, results are filtered by namespace after search
+        """
+        # Search all GO terms
+        results = self.search_ontology_terms(
+            term=term,
+            ontology_type='GOTerm',
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit * 2 if go_aspect else limit  # Get more results if we need to filter
+        )
+
+        # Filter by GO aspect if specified
+        if go_aspect:
+            aspect_to_namespace = {
+                'cellular_component': 'cellular_component',
+                'biological_process': 'biological_process',
+                'molecular_function': 'molecular_function'
+            }
+
+            target_namespace = aspect_to_namespace.get(go_aspect.lower())
+            if not target_namespace:
+                raise AGRAPIError(
+                    f"Invalid go_aspect: '{go_aspect}'. "
+                    f"Valid options: {', '.join(aspect_to_namespace.keys())}"
+                )
+
+            results = [r for r in results if r.namespace == target_namespace]
+            results = results[:limit]  # Apply limit after filtering
+
+        return results
+
+    def search_disease_terms(
+        self,
+        term: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search Disease Ontology (DO) terms.
+
+        Args:
+            term: Search term (e.g., 'diabetes', 'cancer')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_disease_terms('diabetes')
+            # Returns: [OntologyTermResult(curie='DOID:9351', name='diabetes mellitus', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type='DOTerm',
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit
+        )
+
+    def search_phenotype_terms(
+        self,
+        term: str,
+        organism: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search phenotype ontology terms with optional organism filtering.
+
+        Args:
+            term: Search term (e.g., 'lethality', 'sterile')
+            organism: Optional organism filter:
+                - 'human' or 'HP' → HPTerm (Human Phenotype)
+                - 'mouse' or 'MP' → MPTerm (Mammalian Phenotype)
+                - 'worm' or 'WB' → WBPhenotypeTerm (C. elegans)
+                If None, searches all phenotype types (default)
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Search human phenotypes
+            results = db.search_phenotype_terms('seizure', organism='human')
+            # Search all phenotype ontologies
+            results = db.search_phenotype_terms('lethality')
+        """
+        organism_to_phenotype_type = {
+            'human': 'HPTerm',
+            'hp': 'HPTerm',
+            'mouse': 'MPTerm',
+            'mp': 'MPTerm',
+            'worm': 'WBPhenotypeTerm',
+            'wb': 'WBPhenotypeTerm',
+        }
+
+        if organism:
+            ontology_type = organism_to_phenotype_type.get(organism.lower())
+            if not ontology_type:
+                raise AGRAPIError(
+                    f"Unsupported organism for phenotype search: '{organism}'. "
+                    f"Supported: {', '.join(set(organism_to_phenotype_type.values()))}"
+                )
+            return self.search_ontology_terms(
+                term=term,
+                ontology_type=ontology_type,
+                exact_match=exact_match,
+                include_synonyms=include_synonyms,
+                limit=limit
+            )
+        else:
+            # Search all phenotype types and combine results
+            all_results = []
+            for onto_type in ['HPTerm', 'MPTerm', 'WBPhenotypeTerm']:
+                results = self.search_ontology_terms(
+                    term=term,
+                    ontology_type=onto_type,
+                    exact_match=exact_match,
+                    include_synonyms=include_synonyms,
+                    limit=limit
+                )
+                all_results.extend(results)
+
+            # Sort by relevance (exact matches first) and deduplicate
+            seen_curies = set()
+            unique_results = []
+            for result in all_results:
+                if result.curie not in seen_curies:
+                    seen_curies.add(result.curie)
+                    unique_results.append(result)
+
+            return unique_results[:limit]
+
+    def search_chemical_terms(
+        self,
+        term: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search Chemical Entities of Biological Interest (ChEBI) terms.
+
+        Args:
+            term: Search term (e.g., 'glucose', 'dopamine', 'ethanol')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_chemical_terms('dopamine')
+            # Returns: [OntologyTermResult(curie='CHEBI:18243', name='dopamine', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type='CHEBITerm',
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit
+        )
+
+    def search_evidence_terms(
+        self,
+        term: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search Evidence and Conclusion Ontology (ECO) terms.
+
+        Args:
+            term: Search term (e.g., 'experimental evidence', 'sequence similarity')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_evidence_terms('experimental')
+            # Returns evidence code terms from ECO
+        """
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type='ECOTerm',
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit
+        )
+
+    def search_taxon_terms(
+        self,
+        term: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search NCBI Taxonomy terms.
+
+        Args:
+            term: Search term (e.g., 'Caenorhabditis elegans', 'human', 'mouse')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_taxon_terms('elegans')
+            # Returns: [OntologyTermResult(curie='NCBITaxon:6239', name='Caenorhabditis elegans', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type='NCBITaxonTerm',
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit
+        )
+
+    def search_sequence_terms(
+        self,
+        term: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20
+    ) -> List['OntologyTermResult']:
+        """Search Sequence Ontology (SO) terms.
+
+        Args:
+            term: Search term (e.g., 'exon', 'intron', 'promoter')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_sequence_terms('exon')
+            # Returns: [OntologyTermResult(curie='SO:0000147', name='exon', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type='SOTerm',
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit
+        )
 
     def map_entity_curies_to_info(
         self,
