@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Integration tests for fuzzy search with real database.
+"""Integration tests for entity search with real database.
 
 These tests run against the production curation database (read-only) via
 the database-integration-tests GitHub workflow.
@@ -28,11 +28,11 @@ def db_methods():
 
 
 class TestTieredSearchIntegration:
-    """Integration tests for tiered fuzzy search."""
+    """Integration tests for tiered entity search."""
 
     def test_gene_synonym_search(self, db_methods):
         """Test that gene synonym search works."""
-        results = db_methods.search_entities_fuzzy(
+        results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='rutabaga',
             taxon_curie='NCBITaxon:7227',  # Drosophila
@@ -49,7 +49,7 @@ class TestTieredSearchIntegration:
 
     def test_gene_without_synonyms(self, db_methods):
         """Test that include_synonyms=False excludes synonym matches."""
-        with_synonyms = db_methods.search_entities_fuzzy(
+        with_synonyms = db_methods.search_entities(
             entity_type='gene',
             search_pattern='white',
             taxon_curie='NCBITaxon:7227',
@@ -57,7 +57,7 @@ class TestTieredSearchIntegration:
             limit=20
         )
 
-        without_synonyms = db_methods.search_entities_fuzzy(
+        without_synonyms = db_methods.search_entities(
             entity_type='gene',
             search_pattern='white',
             taxon_curie='NCBITaxon:7227',
@@ -75,7 +75,7 @@ class TestTieredSearchIntegration:
 
     def test_allele_search(self, db_methods):
         """Test that allele search works."""
-        results = db_methods.search_entities_fuzzy(
+        results = db_methods.search_entities(
             entity_type='allele',
             search_pattern='white',
             taxon_curie='NCBITaxon:7227',  # Drosophila
@@ -93,7 +93,7 @@ class TestTieredSearchIntegration:
 
     def test_relevance_ordering(self, db_methods):
         """Test that results are ordered by relevance (exact > starts_with > contains)."""
-        results = db_methods.search_entities_fuzzy(
+        results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='white',
             taxon_curie='NCBITaxon:7227',
@@ -125,7 +125,7 @@ class TestTieredSearchIntegration:
     def test_limit_parameter(self, db_methods):
         """Test that limit parameter is respected."""
         for limit in [5, 10, 20]:
-            results = db_methods.search_entities_fuzzy(
+            results = db_methods.search_entities(
                 entity_type='gene',
                 search_pattern='a',  # Common letter, should find many genes
                 taxon_curie='NCBITaxon:7227',
@@ -145,7 +145,7 @@ class TestTieredSearchIntegration:
         ]
 
         for taxon_curie, name in taxa_tests:
-            results = db_methods.search_entities_fuzzy(
+            results = db_methods.search_entities(
                 entity_type='gene',
                 search_pattern='white',
                 taxon_curie=taxon_curie,
@@ -161,21 +161,21 @@ class TestTieredSearchIntegration:
     def test_case_insensitivity(self, db_methods):
         """Test that search is case-insensitive."""
         # Test same search with different cases
-        lowercase_results = db_methods.search_entities_fuzzy(
+        lowercase_results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='white',
             taxon_curie='NCBITaxon:7227',
             limit=20
         )
 
-        uppercase_results = db_methods.search_entities_fuzzy(
+        uppercase_results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='WHITE',
             taxon_curie='NCBITaxon:7227',
             limit=20
         )
 
-        mixed_results = db_methods.search_entities_fuzzy(
+        mixed_results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='White',
             taxon_curie='NCBITaxon:7227',
@@ -196,7 +196,7 @@ class TestTieredSearchIntegration:
 
     def test_no_duplicates(self, db_methods):
         """Test that results contain no duplicate entities."""
-        results = db_methods.search_entities_fuzzy(
+        results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='white',
             taxon_curie='NCBITaxon:7227',
@@ -212,7 +212,7 @@ class TestTieredSearchIntegration:
 
     def test_empty_search_returns_empty(self, db_methods):
         """Test that empty search pattern returns empty list."""
-        results = db_methods.search_entities_fuzzy(
+        results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='',
             taxon_curie='NCBITaxon:7227',
@@ -223,7 +223,7 @@ class TestTieredSearchIntegration:
 
     def test_nonexistent_pattern(self, db_methods):
         """Test that nonexistent pattern returns empty list."""
-        results = db_methods.search_entities_fuzzy(
+        results = db_methods.search_entities(
             entity_type='gene',
             search_pattern='zzz_nonexistent_gene_xyz_12345',
             taxon_curie='NCBITaxon:7227',

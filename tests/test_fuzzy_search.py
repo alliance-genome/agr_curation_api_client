@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Unit tests for fuzzy search functionality in DatabaseMethods."""
+"""Unit tests for entity search functionality in DatabaseMethods."""
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
@@ -7,8 +7,8 @@ from agr_curation_api.db_methods import DatabaseMethods, DatabaseConfig
 from agr_curation_api.exceptions import AGRAPIError
 
 
-class TestFuzzySearch(unittest.TestCase):
-    """Test suite for search_entities_fuzzy method."""
+class TestEntitySearch(unittest.TestCase):
+    """Test suite for search_entities method."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -23,7 +23,7 @@ class TestFuzzySearch(unittest.TestCase):
 
     def test_empty_search_pattern_returns_empty_list(self):
         """Test that empty search pattern returns empty list."""
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='gene',
             search_pattern='',
             taxon_curie='NCBITaxon:7227'
@@ -49,7 +49,7 @@ class TestFuzzySearch(unittest.TestCase):
         ]
         mock_session.execute.return_value = mock_execute
 
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='gene',
             search_pattern='rut',
             taxon_curie='NCBITaxon:7227',
@@ -69,7 +69,7 @@ class TestFuzzySearch(unittest.TestCase):
 
     @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_allele_fuzzy_search_works(self, mock_session_factory):
-        """Test that allele fuzzy search works correctly."""
+        """Test that allele entity search works correctly."""
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
@@ -82,7 +82,7 @@ class TestFuzzySearch(unittest.TestCase):
         ]
         mock_session.execute.return_value = mock_execute
 
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='allele',
             search_pattern='Adcy1',
             taxon_curie='NCBITaxon:7227'
@@ -94,7 +94,7 @@ class TestFuzzySearch(unittest.TestCase):
 
     @patch('agr_curation_api.db_methods.DatabaseMethods._create_session')
     def test_agm_fuzzy_search_works(self, mock_session_factory):
-        """Test that AGM fuzzy search works correctly."""
+        """Test that AGM entity search works correctly."""
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
 
@@ -107,7 +107,7 @@ class TestFuzzySearch(unittest.TestCase):
         ]
         mock_session.execute.return_value = mock_execute
 
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='agm',
             search_pattern='wild type',
             taxon_curie='NCBITaxon:7955'
@@ -131,7 +131,7 @@ class TestFuzzySearch(unittest.TestCase):
         ]
         mock_session.execute.return_value = mock_execute
 
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='gene',
             search_pattern='Adcy1',
             taxon_curie='NCBITaxon:7227',
@@ -163,7 +163,7 @@ class TestFuzzySearch(unittest.TestCase):
         ]
         mock_session.execute.return_value = mock_execute
 
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='gene',
             search_pattern='gene',
             taxon_curie='NCBITaxon:7227',
@@ -186,7 +186,7 @@ class TestFuzzySearch(unittest.TestCase):
             ('FB:FBgn0002', False, 'scrutinize', 'contains', 3)
         ]
 
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='gene',
             search_pattern='rut',
             taxon_curie='NCBITaxon:7227'
@@ -209,7 +209,7 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session_factory.return_value = mock_session
 
         with self.assertRaises(AGRAPIError) as context:
-            self.db_methods.search_entities_fuzzy(
+            self.db_methods.search_entities(
                 entity_type='invalid_type',
                 search_pattern='test',
                 taxon_curie='NCBITaxon:7227'
@@ -227,7 +227,7 @@ class TestFuzzySearch(unittest.TestCase):
         mock_session.execute.side_effect = Exception("Database connection failed")
 
         with self.assertRaises(AGRAPIError) as context:
-            self.db_methods.search_entities_fuzzy(
+            self.db_methods.search_entities(
                 entity_type='gene',
                 search_pattern='test',
                 taxon_curie='NCBITaxon:7227'
@@ -257,7 +257,7 @@ class TestFuzzySearch(unittest.TestCase):
         ]
         mock_session.execute.return_value = mock_execute
 
-        result = self.db_methods.search_entities_fuzzy(
+        result = self.db_methods.search_entities(
             entity_type='gene',
             search_pattern='rut',  # lowercase
             taxon_curie='NCBITaxon:7227'

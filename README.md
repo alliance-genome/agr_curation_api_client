@@ -12,7 +12,7 @@ A unified Python client for Alliance of Genome Resources (AGR) curation APIs.
 - **Unified Interface**: Single client for all AGR curation API endpoints
 - **Multiple Data Sources**: Supports REST API, GraphQL, and direct database access
 - **Type Safety**: Full type hints and Pydantic models for request/response validation
-- **Fuzzy Search**: Partial matching and synonym search for genes, alleles, and other entities
+- **Entity Search**: Partial matching and synonym search for genes, alleles, and other entities
 - **Retry Logic**: Automatic retry with exponential backoff for transient failures
 - **Authentication**: Support for API key and Okta token authentication
 - **Async Support**: Built on httpx for both sync and async operations
@@ -189,7 +189,7 @@ if allele:
 
 The client provides two search methods with different strengths:
 
-**Fuzzy Search** (`search_entities_fuzzy`): Best for user-friendly, autocomplete-style searching
+**Entity Search** (`search_entities`): Best for user-friendly, autocomplete-style searching
 - Database-only (direct SQL queries)
 - Partial text matching: "rut" finds "rutabaga", "RUT", "rut-1"
 - Automatically searches symbols, full names, and synonyms
@@ -205,12 +205,12 @@ The client provides two search methods with different strengths:
 - Use when: you know exact field names, need complex filters, require full entity data
 - Supports all entity types available in the API
 
-### Fuzzy Search
+### Entity Search
 
 ```python
 # Search for genes with partial matching
 # Example: Find genes containing "rut" in Drosophila
-results = client.db.search_entities_fuzzy(
+results = client.db.search_entities(
     entity_type='gene',
     search_pattern='rut',
     taxon_curie='NCBITaxon:7227',
@@ -224,7 +224,7 @@ for result in results:
     print(f"  Relevance: {result['relevance']}")    # 1 (best) to 3 (least)
 
 # Search for alleles without synonyms
-allele_results = client.db.search_entities_fuzzy(
+allele_results = client.db.search_entities(
     entity_type='allele',
     search_pattern='daf',
     taxon_curie='NCBITaxon:6239',
