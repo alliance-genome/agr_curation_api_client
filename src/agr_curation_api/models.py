@@ -341,6 +341,23 @@ class OntologyTerm(BaseModel):
     model_config = ConfigDict(extra='allow')
 
 
+class OntologyTermResult(BaseModel):
+    """Ontology term result from database search.
+
+    Used for direct database queries that include synonym information.
+    This is separate from OntologyTerm which represents API responses.
+    """
+
+    curie: str = Field(..., description="Ontology term CURIE (e.g., 'WBbt:0005062')")
+    name: str = Field(..., description="Canonical term name")
+    namespace: str = Field(..., description="Ontology namespace")
+    definition: Optional[str] = Field(None, description="Term definition")
+    ontology_type: str = Field(..., description="Ontology term type (e.g., 'WBBTTerm', 'GOTerm')")
+    synonyms: List[str] = Field(default_factory=list, description="List of synonyms")
+
+    model_config = ConfigDict(extra='allow')
+
+
 class ExpressionAnnotation(BaseModel):
     """Expression annotation model from A-Team curation API."""
 
