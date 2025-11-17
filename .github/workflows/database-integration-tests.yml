@@ -201,6 +201,18 @@ jobs:
             sleep $SLEEP_INTERVAL
           done
 
+          # Start keepalive to prevent idle timeout
+          # Send pg_isready every 30 seconds to keep tunnel alive
+          (
+            while ps -p $SSM_PID >/dev/null 2>&1; do
+              sleep 30
+              pg_isready -h localhost -p $LOCAL_PORT -t 1 >/dev/null 2>&1 || true
+            done
+          ) &
+          KEEPALIVE_PID=$!
+          echo "keepalive_pid=$KEEPALIVE_PID" >> $GITHUB_OUTPUT
+          echo "✅ Started keepalive process (PID: $KEEPALIVE_PID)"
+
       - name: Run database integration tests
         env:
           PERSISTENT_STORE_DB_HOST: localhost
@@ -260,6 +272,12 @@ jobs:
           set -euo pipefail
 
           echo "Cleaning up SSM tunnel (PID: ${{ steps.tunnel.outputs.pid }})"
+
+          # Kill keepalive process first
+          if [ -n "${{ steps.tunnel.outputs.keepalive_pid }}" ] && ps -p ${{ steps.tunnel.outputs.keepalive_pid }} >/dev/null 2>&1; then
+            echo "Killing keepalive process: ${{ steps.tunnel.outputs.keepalive_pid }}"
+            kill ${{ steps.tunnel.outputs.keepalive_pid }} 2>/dev/null || true
+          fi
 
           # Validate PID before attempting to kill
           if [ -n "${{ steps.tunnel.outputs.pid }}" ] && ps -p ${{ steps.tunnel.outputs.pid }} >/dev/null 2>&1; then
