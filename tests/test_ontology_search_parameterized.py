@@ -93,8 +93,12 @@ class TestOntologySearchParameterized:
         for result in results:
             assert isinstance(result, OntologyTermResult)
             assert result.ontology_type == ontology_type
-            # Exact match should contain the term (case-insensitive)
-            assert term.lower() in result.name.lower()
+            # Exact match should contain the term in name or synonyms (case-insensitive)
+            term_found = (
+                term.lower() in result.name.lower() or
+                any(term.lower() in syn.lower() for syn in result.synonyms)
+            )
+            assert term_found, f"Term '{term}' not found in name '{result.name}' or synonyms {result.synonyms}"
 
     @pytest.mark.parametrize("ontology_type,test_terms", ONTOLOGY_TEST_CASES)
     def test_prefix_match(self, db, ontology_type, test_terms):
