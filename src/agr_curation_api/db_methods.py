@@ -1948,7 +1948,7 @@ class DatabaseMethods:
         """Search anatomy ontology terms with organism-aware type mapping.
 
         Convenience wrapper that automatically maps data_provider to the correct
-        anatomy ontology type (WBBTTerm for WB, FBCVTerm for FB, etc.).
+        anatomy ontology type (WBBTTerm for WB, UBERONTerm for FB, etc.).
 
         Args:
             term: Search term (e.g., 'linker cell', 'pharynx')
@@ -1971,7 +1971,7 @@ class DatabaseMethods:
         # Map data_provider to anatomy ontology type
         provider_to_anatomy_type = {
             "WB": "WBBTTerm",  # C. elegans - WormBase Anatomy
-            "FB": "FBCVTerm",  # D. melanogaster - FlyBase Controlled Vocabulary
+            "FB": "UBERONTerm",  # D. melanogaster - Uberon (cross-species anatomy)
             "ZFIN": "ZFATerm",  # D. rerio (zebrafish) - ZFIN Anatomy
             "MGI": "EMAPATerm",  # M. musculus (mouse) - Mouse Anatomy (embryonic)
             "RGD": "UBERONTerm",  # R. norvegicus (rat) - Uberon (cross-species)
