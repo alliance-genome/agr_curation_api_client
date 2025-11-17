@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 class DataSource(str, Enum):
     """Supported data sources."""
+
     API = "api"
     GRAPHQL = "graphql"
     DATABASE = "db"
@@ -76,9 +77,7 @@ class AGRCurationAPIClient:
     """
 
     def __init__(
-        self,
-        config: Union[APIConfig, Dict[str, Any], None] = None,
-        data_source: Union[DataSource, str, None] = None
+        self, config: Union[APIConfig, Dict[str, Any], None] = None, data_source: Union[DataSource, str, None] = None
     ):
         """Initialize the API client.
 
@@ -122,7 +121,7 @@ class AGRCurationAPIClient:
         db_func: Optional[Callable[[], Any]],
         graphql_func: Optional[Callable[[], Any]],
         api_func: Optional[Callable[[], Any]],
-        method_name: str = "method"
+        method_name: str = "method",
     ) -> Any:
         """Execute a function with automatic fallback through data sources.
 
@@ -213,20 +212,14 @@ class AGRCurationAPIClient:
         return self
 
     def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType]
+        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
     ) -> None:
         """Context manager exit."""
         if self._db_methods:
             self._db_methods.close()
 
     def _apply_data_provider_filter(
-        self,
-        req_data: Dict[str, Any],
-        data_provider: Optional[str],
-        field_name: str = "dataProvider.abbreviation"
+        self, req_data: Dict[str, Any], data_provider: Optional[str], field_name: str = "dataProvider.abbreviation"
     ) -> None:
         """Apply data provider filter to request data."""
         if data_provider:
@@ -234,49 +227,26 @@ class AGRCurationAPIClient:
                 req_data["searchFilters"] = {}
 
             req_data["searchFilters"]["dataProviderFilter"] = {
-                field_name: {
-                    "queryString": data_provider,
-                    "tokenOperator": "OR"
-                }
+                field_name: {"queryString": data_provider, "tokenOperator": "OR"}
             }
 
     def _apply_taxon_filter(
-        self,
-        req_data: Dict[str, Any],
-        taxon: Optional[str],
-        field_name: str = "taxon.curie"
+        self, req_data: Dict[str, Any], taxon: Optional[str], field_name: str = "taxon.curie"
     ) -> None:
         """Apply taxon filter to request data."""
         if taxon:
             if "searchFilters" not in req_data:
                 req_data["searchFilters"] = {}
 
-            req_data["searchFilters"]["taxonFilter"] = {
-                field_name: {
-                    "queryString": taxon,
-                    "tokenOperator": "OR"
-                }
-            }
+            req_data["searchFilters"]["taxonFilter"] = {field_name: {"queryString": taxon, "tokenOperator": "OR"}}
 
-    def _apply_date_sorting(
-        self,
-        req_data: Dict[str, Any],
-        updated_after: Optional[Union[str, datetime]]
-    ) -> None:
+    def _apply_date_sorting(self, req_data: Dict[str, Any], updated_after: Optional[Union[str, datetime]]) -> None:
         """Apply date sorting to request data."""
         if updated_after:
-            req_data["sortOrders"] = [
-                {
-                    "field": "dbDateUpdated",
-                    "order": -1
-                }
-            ]
+            req_data["sortOrders"] = [{"field": "dbDateUpdated", "order": -1}]
 
     def _filter_by_date(
-        self,
-        items: List[Any],
-        updated_after: Optional[Union[str, datetime]],
-        date_field: str = "dbDateUpdated"
+        self, items: List[Any], updated_after: Optional[Union[str, datetime]], date_field: str = "dbDateUpdated"
     ) -> List[Any]:
         """Filter items by date."""
         if not updated_after:
@@ -284,8 +254,8 @@ class AGRCurationAPIClient:
 
         # Convert to datetime if needed and ensure it's timezone-aware
         if isinstance(updated_after, str):
-            if 'Z' in updated_after or '+' in updated_after:
-                threshold = datetime.fromisoformat(updated_after.replace('Z', '+00:00'))
+            if "Z" in updated_after or "+" in updated_after:
+                threshold = datetime.fromisoformat(updated_after.replace("Z", "+00:00"))
             else:
                 threshold = datetime.fromisoformat(updated_after).replace(tzinfo=timezone.utc)
         else:
@@ -299,8 +269,8 @@ class AGRCurationAPIClient:
             item_date = getattr(item, date_field, None)
             if item_date:
                 if isinstance(item_date, str):
-                    if 'Z' in item_date or '+' in item_date:
-                        item_datetime = datetime.fromisoformat(item_date.replace('Z', '+00:00'))
+                    if "Z" in item_date or "+" in item_date:
+                        item_datetime = datetime.fromisoformat(item_date.replace("Z", "+00:00"))
                     else:
                         item_datetime = datetime.fromisoformat(item_date).replace(tzinfo=timezone.utc)
                 elif isinstance(item_date, datetime):
@@ -332,18 +302,13 @@ class AGRCurationAPIClient:
             if method.upper() == "GET":
                 request = urllib.request.Request(url=url, headers=headers)
             else:
-                request_data = json.dumps(data or {}).encode('utf-8')
-                request = urllib.request.Request(
-                    url=url,
-                    method=method.upper(),
-                    headers=headers,
-                    data=request_data
-                )
+                request_data = json.dumps(data or {}).encode("utf-8")
+                request = urllib.request.Request(url=url, method=method.upper(), headers=headers, data=request_data)
 
             with urllib.request.urlopen(request) as response:
                 if response.getcode() == 200:
                     logger.debug("Request successful")
-                    res = response.read().decode('utf-8')
+                    res = response.read().decode("utf-8")
                     return dict(json.loads(res))
                 else:
                     raise AGRAPIError(f"Request failed with status: {response.getcode()}")
@@ -367,18 +332,13 @@ class AGRCurationAPIClient:
         request_body = {"query": query}
 
         try:
-            request_data = json.dumps(request_body).encode('utf-8')
-            request = urllib.request.Request(
-                url=url,
-                method="POST",
-                headers=headers,
-                data=request_data
-            )
+            request_data = json.dumps(request_body).encode("utf-8")
+            request = urllib.request.Request(url=url, method="POST", headers=headers, data=request_data)
 
             with urllib.request.urlopen(request) as response:
                 if response.getcode() == 200:
                     logger.debug("GraphQL request successful")
-                    res = response.read().decode('utf-8')
+                    res = response.read().decode("utf-8")
                     result = json.loads(res)
 
                     if "errors" in result:
@@ -393,7 +353,7 @@ class AGRCurationAPIClient:
             if e.code == 401:
                 raise AGRAuthenticationError("Authentication failed")
             else:
-                error_body = e.read().decode('utf-8') if e.fp else ""
+                error_body = e.read().decode("utf-8") if e.fp else ""
                 raise AGRAPIError(f"HTTP error {e.code}: {e.reason}. {error_body}")
         except AGRAPIError:
             raise
@@ -412,7 +372,7 @@ class AGRCurationAPIClient:
         fields: Union[str, List[str], None] = None,
         include_obsolete: bool = False,
         data_source: Optional[Union[DataSource, str]] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> List[Gene]:
         """Get genes using the configured or specified data source.
 
@@ -443,13 +403,12 @@ class AGRCurationAPIClient:
         if source is None:
             # Define functions for each data source (or None if not applicable)
             if taxon:  # Database requires taxon
+
                 def db_func() -> List[Gene]:
                     return self._get_db_methods().get_genes_by_taxon(
-                        taxon_curie=taxon,
-                        limit=limit,
-                        offset=offset,
-                        include_obsolete=include_obsolete
+                        taxon_curie=taxon, limit=limit, offset=offset, include_obsolete=include_obsolete
                     )
+
             else:
                 db_func = None  # type: ignore[assignment]
 
@@ -461,7 +420,7 @@ class AGRCurationAPIClient:
                     limit=limit,
                     page=page,
                     include_obsolete=include_obsolete,
-                    **kwargs
+                    **kwargs,
                 )
 
             def api_func() -> List[Gene]:
@@ -475,7 +434,7 @@ class AGRCurationAPIClient:
                     _apply_data_provider_filter=self._apply_data_provider_filter,
                     _apply_taxon_filter=self._apply_taxon_filter,
                     _apply_date_sorting=self._apply_date_sorting,
-                    _filter_by_date=self._filter_by_date
+                    _filter_by_date=self._filter_by_date,
                 )
 
             return self._execute_with_fallback(db_func, graphql_func, api_func, "get_genes")  # type: ignore[return-value,no-any-return]
@@ -489,16 +448,13 @@ class AGRCurationAPIClient:
                 limit=limit,
                 page=page,
                 include_obsolete=include_obsolete,
-                **kwargs
+                **kwargs,
             )
         elif source == DataSource.DATABASE:
             if not taxon:
                 raise AGRAPIError("taxon parameter is required for database queries")
             return self._get_db_methods().get_genes_by_taxon(
-                taxon_curie=taxon,
-                limit=limit,
-                offset=offset,
-                include_obsolete=include_obsolete
+                taxon_curie=taxon, limit=limit, offset=offset, include_obsolete=include_obsolete
             )
         else:  # API
             return self._api_methods.get_genes(
@@ -511,14 +467,14 @@ class AGRCurationAPIClient:
                 _apply_data_provider_filter=self._apply_data_provider_filter,
                 _apply_taxon_filter=self._apply_taxon_filter,
                 _apply_date_sorting=self._apply_date_sorting,
-                _filter_by_date=self._filter_by_date
+                _filter_by_date=self._filter_by_date,
             )
 
     def get_gene(
         self,
         gene_id: str,
         fields: Union[str, List[str], None] = None,
-        data_source: Optional[Union[DataSource, str]] = None
+        data_source: Optional[Union[DataSource, str]] = None,
     ) -> Optional[Gene]:
         """Get a specific gene by ID.
 
@@ -552,7 +508,7 @@ class AGRCurationAPIClient:
         wb_extraction_subset: bool = False,
         fields: Union[str, List[str], None] = None,
         data_source: Optional[Union[DataSource, str]] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> List[Allele]:
         """Get alleles using the configured or specified data source.
 
@@ -580,30 +536,24 @@ class AGRCurationAPIClient:
             - When data_source is None, automatically tries db -> graphql -> api with fallback
         """
         if wb_extraction_subset:
-            taxon = 'NCBITaxon:6239'
+            taxon = "NCBITaxon:6239"
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
         # If no data source specified, use fallback mechanism
         if source is None:
             if taxon:  # Database requires taxon
+
                 def db_func() -> List[Allele]:
                     return self._get_db_methods().get_alleles_by_taxon(
-                        taxon_curie=taxon,
-                        limit=limit,
-                        offset=offset,
-                        wb_extraction_subset=wb_extraction_subset
+                        taxon_curie=taxon, limit=limit, offset=offset, wb_extraction_subset=wb_extraction_subset
                     )
+
             else:
                 db_func = None  # type: ignore[assignment]
 
             def graphql_func() -> List[Allele]:
                 return self._graphql_methods.get_alleles(
-                    fields=fields,
-                    data_provider=data_provider,
-                    taxon=taxon,
-                    limit=limit,
-                    page=page,
-                    **kwargs
+                    fields=fields, data_provider=data_provider, taxon=taxon, limit=limit, page=page, **kwargs
                 )
 
             def api_func() -> List[Allele]:
@@ -615,7 +565,7 @@ class AGRCurationAPIClient:
                     transgenes_only=transgenes_only,
                     _apply_data_provider_filter=self._apply_data_provider_filter,
                     _apply_date_sorting=self._apply_date_sorting,
-                    _filter_by_date=self._filter_by_date
+                    _filter_by_date=self._filter_by_date,
                 )
 
             return self._execute_with_fallback(db_func, graphql_func, api_func, "get_alleles")  # type: ignore[return-value,no-any-return]
@@ -623,22 +573,14 @@ class AGRCurationAPIClient:
         # Explicit data source specified - use that one
         if source == DataSource.GRAPHQL:
             return self._graphql_methods.get_alleles(
-                fields=fields,
-                data_provider=data_provider,
-                taxon=taxon,
-                limit=limit,
-                page=page,
-                **kwargs
+                fields=fields, data_provider=data_provider, taxon=taxon, limit=limit, page=page, **kwargs
             )
         elif source == DataSource.DATABASE:
             if not taxon:
                 raise AGRAPIError("taxon parameter is required for database queries")
             db_methods = self._get_db_methods()
             return db_methods.get_alleles_by_taxon(
-                taxon_curie=taxon,
-                limit=limit,
-                offset=offset,
-                wb_extraction_subset=wb_extraction_subset
+                taxon_curie=taxon, limit=limit, offset=offset, wb_extraction_subset=wb_extraction_subset
             )
         else:  # API
             return self._api_methods.get_alleles(
@@ -649,14 +591,10 @@ class AGRCurationAPIClient:
                 transgenes_only=transgenes_only,
                 _apply_data_provider_filter=self._apply_data_provider_filter,
                 _apply_date_sorting=self._apply_date_sorting,
-                _filter_by_date=self._filter_by_date
+                _filter_by_date=self._filter_by_date,
             )
 
-    def get_allele(
-        self,
-        allele_id: str,
-        data_source: Optional[Union[DataSource, str]] = None
-    ) -> Optional[Allele]:
+    def get_allele(self, allele_id: str, data_source: Optional[Union[DataSource, str]] = None) -> Optional[Allele]:
         """Get a specific allele by ID.
 
         Args:
@@ -675,10 +613,7 @@ class AGRCurationAPIClient:
 
     # Species/Taxon methods (API only)
     def get_species(
-        self,
-        limit: int = 100,
-        page: int = 0,
-        updated_after: Optional[Union[str, datetime]] = None
+        self, limit: int = 100, page: int = 0, updated_after: Optional[Union[str, datetime]] = None
     ) -> List[NCBITaxonTerm]:
         """Get species data from A-Team API using NCBITaxonTerm endpoint."""
         return self._api_methods.get_species(
@@ -686,14 +621,11 @@ class AGRCurationAPIClient:
             page=page,
             updated_after=updated_after,
             _apply_date_sorting=self._apply_date_sorting,
-            _filter_by_date=self._filter_by_date
+            _filter_by_date=self._filter_by_date,
         )
 
     def get_ncbi_taxon_terms(
-        self,
-        limit: int = 100,
-        page: int = 0,
-        updated_after: Optional[Union[str, datetime]] = None
+        self, limit: int = 100, page: int = 0, updated_after: Optional[Union[str, datetime]] = None
     ) -> List[NCBITaxonTerm]:
         """Get NCBI Taxon terms from A-Team API."""
         return self._api_methods.get_ncbi_taxon_terms(
@@ -701,7 +633,7 @@ class AGRCurationAPIClient:
             page=page,
             updated_after=updated_after,
             _apply_date_sorting=self._apply_date_sorting,
-            _filter_by_date=self._filter_by_date
+            _filter_by_date=self._filter_by_date,
         )
 
     def get_ncbi_taxon_term(self, taxon_id: str) -> Optional[NCBITaxonTerm]:
@@ -725,7 +657,7 @@ class AGRCurationAPIClient:
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        data_source: Optional[Union[DataSource, str]] = None
+        data_source: Optional[Union[DataSource, str]] = None,
     ) -> Union[List[ExpressionAnnotation], List[Dict[str, str]]]:
         """Get expression annotations using the configured or specified data source.
 
@@ -750,12 +682,15 @@ class AGRCurationAPIClient:
         # If no data source specified, use fallback mechanism
         if source is None:
             if taxon:  # Database requires taxon
+
                 def db_func() -> List[Dict[str, str]]:
                     return self._get_db_methods().get_expression_annotations(taxon_curie=taxon)
+
             else:
                 db_func = None  # type: ignore[assignment]
 
             if data_provider:  # API requires data_provider
+
                 def api_func() -> List[ExpressionAnnotation]:
                     return self._api_methods.get_expression_annotations(
                         data_provider=data_provider,
@@ -764,8 +699,9 @@ class AGRCurationAPIClient:
                         updated_after=updated_after,
                         _apply_data_provider_filter=self._apply_data_provider_filter,
                         _apply_date_sorting=self._apply_date_sorting,
-                        _filter_by_date=self._filter_by_date
+                        _filter_by_date=self._filter_by_date,
                     )
+
             else:
                 api_func = None  # type: ignore[assignment]
 
@@ -786,7 +722,7 @@ class AGRCurationAPIClient:
                 updated_after=updated_after,
                 _apply_data_provider_filter=self._apply_data_provider_filter,
                 _apply_date_sorting=self._apply_date_sorting,
-                _filter_by_date=self._filter_by_date
+                _filter_by_date=self._filter_by_date,
             )
 
     # AGM methods (API only)
@@ -796,7 +732,7 @@ class AGRCurationAPIClient:
         subtype: Optional[str] = None,
         limit: int = 5000,
         page: int = 0,
-        updated_after: Optional[Union[str, datetime]] = None
+        updated_after: Optional[Union[str, datetime]] = None,
     ) -> List[AffectedGenomicModel]:
         """Get Affected Genomic Models (AGMs) from A-Team API."""
         return self._api_methods.get_agms(
@@ -807,7 +743,7 @@ class AGRCurationAPIClient:
             updated_after=updated_after,
             _apply_data_provider_filter=self._apply_data_provider_filter,
             _apply_date_sorting=self._apply_date_sorting,
-            _filter_by_date=self._filter_by_date
+            _filter_by_date=self._filter_by_date,
         )
 
     def get_agm(self, agm_id: str) -> Optional[AffectedGenomicModel]:
@@ -815,10 +751,7 @@ class AGRCurationAPIClient:
         return self._api_methods.get_agm(agm_id)
 
     def get_fish_models(
-        self,
-        limit: int = 5000,
-        page: int = 0,
-        updated_after: Optional[Union[str, datetime]] = None
+        self, limit: int = 5000, page: int = 0, updated_after: Optional[Union[str, datetime]] = None
     ) -> List[AffectedGenomicModel]:
         """Get zebrafish AGMs from A-Team API."""
         return self._api_methods.get_fish_models(
@@ -827,7 +760,7 @@ class AGRCurationAPIClient:
             updated_after=updated_after,
             _apply_data_provider_filter=self._apply_data_provider_filter,
             _apply_date_sorting=self._apply_date_sorting,
-            _filter_by_date=self._filter_by_date
+            _filter_by_date=self._filter_by_date,
         )
 
     # Search methods (API only)
@@ -837,7 +770,7 @@ class AGRCurationAPIClient:
         search_filters: Dict[str, Any],
         limit: int = 5000,
         page: int = 0,
-        updated_after: Optional[Union[str, datetime]] = None
+        updated_after: Optional[Union[str, datetime]] = None,
     ) -> APIResponse:
         """Generic search method for any entity type."""
         return self._api_methods.search_entities(
@@ -846,14 +779,11 @@ class AGRCurationAPIClient:
             limit=limit,
             page=page,
             updated_after=updated_after,
-            _apply_date_sorting=self._apply_date_sorting
+            _apply_date_sorting=self._apply_date_sorting,
         )
 
     # Ontology relationship methods (DB only)
-    def get_ontology_pairs(
-        self,
-        curie_prefix: str
-    ) -> List[Dict[str, Any]]:
+    def get_ontology_pairs(self, curie_prefix: str) -> List[Dict[str, Any]]:
         """Get ontology term parent-child relationships from the database.
 
         Args:
@@ -883,10 +813,7 @@ class AGRCurationAPIClient:
         return self._get_db_methods().get_data_providers()
 
     # Disease annotation methods (DB only)
-    def get_disease_annotations(
-        self,
-        taxon: str
-    ) -> List[Dict[str, str]]:
+    def get_disease_annotations(self, taxon: str) -> List[Dict[str, str]]:
         """Get disease annotations from the database.
 
         This retrieves disease annotations from multiple sources:
@@ -908,10 +835,7 @@ class AGRCurationAPIClient:
         return self._get_db_methods().get_disease_annotations(taxon_curie=taxon)
 
     # Ortholog methods (DB only)
-    def get_best_human_orthologs_for_taxon(
-        self,
-        taxon: str
-    ) -> Dict[str, tuple]:
+    def get_best_human_orthologs_for_taxon(self, taxon: str) -> Dict[str, tuple]:
         """Get the best human orthologs for all genes from a given species.
 
         Args:
@@ -929,12 +853,7 @@ class AGRCurationAPIClient:
         return self._get_db_methods().get_best_human_orthologs_for_taxon(taxon_curie=taxon)
 
     # Entity mapping methods (DB only, from agr_literature_service)
-    def map_entity_names_to_curies(
-        self,
-        entity_type: str,
-        entity_names: List[str],
-        taxon: str
-    ) -> List[Dict[str, Any]]:
+    def map_entity_names_to_curies(self, entity_type: str, entity_names: List[str], taxon: str) -> List[Dict[str, Any]]:
         """Map entity names to their CURIEs.
 
         Args:
@@ -949,16 +868,10 @@ class AGRCurationAPIClient:
             results = client.map_entity_names_to_curies('gene', ['ACT1', 'CDC42'], 'NCBITaxon:559292')
         """
         return self._get_db_methods().map_entity_names_to_curies(
-            entity_type=entity_type,
-            entity_names=entity_names,
-            taxon_curie=taxon
+            entity_type=entity_type, entity_names=entity_names, taxon_curie=taxon
         )
 
-    def map_entity_curies_to_info(
-        self,
-        entity_type: str,
-        entity_curies: List[str]
-    ) -> List[Dict[str, Any]]:
+    def map_entity_curies_to_info(self, entity_type: str, entity_curies: List[str]) -> List[Dict[str, Any]]:
         """Map entity CURIEs to their basic information.
 
         Args:
@@ -971,16 +884,9 @@ class AGRCurationAPIClient:
         Example:
             results = client.map_entity_curies_to_info('gene', ['SGD:S000000001', 'SGD:S000000002'])
         """
-        return self._get_db_methods().map_entity_curies_to_info(
-            entity_type=entity_type,
-            entity_curies=entity_curies
-        )
+        return self._get_db_methods().map_entity_curies_to_info(entity_type=entity_type, entity_curies=entity_curies)
 
-    def map_curies_to_names(
-        self,
-        category: str,
-        curies: List[str]
-    ) -> Dict[str, str]:
+    def map_curies_to_names(self, category: str, curies: List[str]) -> Dict[str, str]:
         """Map entity CURIEs to their display names.
 
         Args:
@@ -994,17 +900,11 @@ class AGRCurationAPIClient:
             mapping = client.map_curies_to_names('gene', ['SGD:S000000001'])
             # {'SGD:S000000001': 'ACT1'}
         """
-        return self._get_db_methods().map_curies_to_names(
-            category=category,
-            curies=curies
-        )
+        return self._get_db_methods().map_curies_to_names(category=category, curies=curies)
 
     # ATP/Topic ontology methods (DB only, from agr_literature_service)
     def search_atp_topics(
-        self,
-        topic: Optional[str] = None,
-        mod_abbr: Optional[str] = None,
-        limit: int = 10
+        self, topic: Optional[str] = None, mod_abbr: Optional[str] = None, limit: int = 10
     ) -> List[Dict[str, str]]:
         """Search ATP ontology for topics.
 
@@ -1019,16 +919,9 @@ class AGRCurationAPIClient:
         Example:
             topics = client.search_atp_topics(topic='development', mod_abbr='WB')
         """
-        return self._get_db_methods().search_atp_topics(
-            topic=topic,
-            mod_abbr=mod_abbr,
-            limit=limit
-        )
+        return self._get_db_methods().search_atp_topics(topic=topic, mod_abbr=mod_abbr, limit=limit)
 
-    def get_atp_descendants(
-        self,
-        ancestor_curie: str
-    ) -> List[Dict[str, str]]:
+    def get_atp_descendants(self, ancestor_curie: str) -> List[Dict[str, str]]:
         """Get all descendants of an ATP ontology term.
 
         Args:
@@ -1042,11 +935,7 @@ class AGRCurationAPIClient:
         """
         return self._get_db_methods().get_atp_descendants(ancestor_curie=ancestor_curie)
 
-    def search_ontology_ancestors_or_descendants(
-        self,
-        ontology_node: str,
-        direction: str = 'descendants'
-    ) -> List[str]:
+    def search_ontology_ancestors_or_descendants(self, ontology_node: str, direction: str = "descendants") -> List[str]:
         """Get ancestors or descendants of an ontology node.
 
         Args:
@@ -1060,16 +949,11 @@ class AGRCurationAPIClient:
             desc = client.search_ontology_ancestors_or_descendants('GO:0008150', 'descendants')
         """
         return self._get_db_methods().get_ontology_ancestors_or_descendants(
-            ontology_node=ontology_node,
-            direction=direction
+            ontology_node=ontology_node, direction=direction
         )
 
     # Species search methods (DB only, from agr_literature_service)
-    def search_species(
-        self,
-        species: str,
-        limit: int = 10
-    ) -> List[Dict[str, str]]:
+    def search_species(self, species: str, limit: int = 10) -> List[Dict[str, str]]:
         """Search for species by name or CURIE.
 
         Args:

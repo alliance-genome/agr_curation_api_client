@@ -39,7 +39,7 @@ class GraphQLMethods:
         limit: int = 5000,
         page: int = 0,
         include_obsolete: bool = False,
-        **filter_params: Any
+        **filter_params: Any,
     ) -> List[Gene]:
         """Get genes using GraphQL API with flexible field selection.
 
@@ -78,18 +78,11 @@ class GraphQLMethods:
             genes = graphql_methods.get_genes(fields="full", limit=10)
         """
         # Build GraphQL params from filters
-        params = build_graphql_params(
-            data_provider=data_provider,
-            taxon=taxon,
-            **filter_params
-        )
+        params = build_graphql_params(data_provider=data_provider, taxon=taxon, **filter_params)
 
         # Build the query
         query = GraphQLQueryBuilder.build_gene_query(
-            fields=fields,
-            page=page,
-            limit=limit,
-            params=params if params else None
+            fields=fields, page=page, limit=limit, params=params if params else None
         )
 
         # Execute the query
@@ -103,7 +96,7 @@ class GraphQLMethods:
                 try:
                     gene = Gene(**gene_data)
                     # Client-side filter as safety (in case server-side filter doesn't work)
-                    if not include_obsolete and hasattr(gene, 'obsolete') and gene.obsolete:
+                    if not include_obsolete and hasattr(gene, "obsolete") and gene.obsolete:
                         continue
                     genes.append(gene)
                 except ValidationError as e:
@@ -111,11 +104,7 @@ class GraphQLMethods:
 
         return genes
 
-    def get_gene(
-        self,
-        gene_id: str,
-        fields: Union[str, List[str], None] = None
-    ) -> Optional[Gene]:
+    def get_gene(self, gene_id: str, fields: Union[str, List[str], None] = None) -> Optional[Gene]:
         """Get a specific gene by ID using GraphQL with flexible field selection.
 
         Args:
@@ -153,7 +142,7 @@ class GraphQLMethods:
         taxon: Optional[str] = None,
         limit: int = 5000,
         page: int = 0,
-        **filter_params: Any
+        **filter_params: Any,
     ) -> List[Allele]:
         """Get alleles using GraphQL API with flexible field selection.
 
@@ -179,18 +168,11 @@ class GraphQLMethods:
             )
         """
         # Build GraphQL params from filters
-        params = build_graphql_params(
-            data_provider=data_provider,
-            taxon=taxon,
-            **filter_params
-        )
+        params = build_graphql_params(data_provider=data_provider, taxon=taxon, **filter_params)
 
         # Build the query
         query = GraphQLQueryBuilder.build_allele_query(
-            fields=fields,
-            page=page,
-            limit=limit,
-            params=params if params else None
+            fields=fields, page=page, limit=limit, params=params if params else None
         )
 
         # Execute the query

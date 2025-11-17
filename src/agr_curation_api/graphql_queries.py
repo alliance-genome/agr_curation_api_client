@@ -7,12 +7,7 @@ class FieldSelector:
     """Helper class to manage field selection for GraphQL queries."""
 
     # Default fields for genes - minimal set that's always useful
-    DEFAULT_GENE_FIELDS = {
-        "primaryExternalId",
-        "curie",
-        "obsolete",
-        "internal"
-    }
+    DEFAULT_GENE_FIELDS = {"primaryExternalId", "curie", "obsolete", "internal"}
 
     # All available gene fields organized by category
     ALL_GENE_FIELDS = {
@@ -22,7 +17,6 @@ class FieldSelector:
         "curie",
         "obsolete",
         "internal",
-
         # Audit fields
         "dateCreated",
         "dateUpdated",
@@ -42,29 +36,13 @@ class FieldSelector:
         "geneType": ["name", "curie"],
         "dataProvider": ["abbreviation", "fullName"],
         "taxon": ["curie", "name"],
-        "crossReferences": [
-            "referencedCurie",
-            "displayName",
-            "prefix"
-        ]
+        "crossReferences": ["referencedCurie", "displayName", "prefix"],
     }
 
     # Preset field groups for common use cases
     GENE_FIELD_PRESETS = {
-        "minimal": [
-            "primaryExternalId",
-            "curie",
-            "geneSymbol",
-            "obsolete"
-        ],
-        "basic": [
-            "primaryExternalId",
-            "curie",
-            "geneSymbol",
-            "geneFullName",
-            "taxon",
-            "obsolete"
-        ],
+        "minimal": ["primaryExternalId", "curie", "geneSymbol", "obsolete"],
+        "basic": ["primaryExternalId", "curie", "geneSymbol", "geneFullName", "taxon", "obsolete"],
         "standard": [
             "id",
             "primaryExternalId",
@@ -77,7 +55,7 @@ class FieldSelector:
             "taxon",
             "dataProvider",
             "obsolete",
-            "internal"
+            "internal",
         ],
         "full": [
             "id",
@@ -99,8 +77,8 @@ class FieldSelector:
             "dataProvider",
             "crossReferences",
             "obsolete",
-            "internal"
-        ]
+            "internal",
+        ],
     }
 
     @classmethod
@@ -169,7 +147,7 @@ class GraphQLQueryBuilder:
         fields: Union[str, List[str], None] = None,
         page: int = 0,
         limit: int = 10,
-        params: Optional[List[Dict[str, str]]] = None
+        params: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Build a GraphQL query for genes.
 
@@ -207,10 +185,7 @@ class GraphQLQueryBuilder:
         return query
 
     @staticmethod
-    def build_gene_by_id_query(
-        gene_id: str,
-        fields: Union[str, List[str], None] = None
-    ) -> str:
+    def build_gene_by_id_query(gene_id: str, fields: Union[str, List[str], None] = None) -> str:
         """Build a GraphQL query for a single gene by ID.
 
         Args:
@@ -236,7 +211,7 @@ class GraphQLQueryBuilder:
         fields: Union[str, List[str], None] = None,
         page: int = 0,
         limit: int = 10,
-        params: Optional[List[Dict[str, str]]] = None
+        params: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Build a GraphQL query for alleles.
 
@@ -259,7 +234,7 @@ class GraphQLQueryBuilder:
                 "alleleFullName",
                 "taxon",
                 "dataProvider",
-                "obsolete"
+                "obsolete",
             ]
         elif isinstance(fields, str):
             fields = [fields]
@@ -309,9 +284,7 @@ class GraphQLQueryBuilder:
 
 
 def build_graphql_params(
-    data_provider: Optional[str] = None,
-    taxon: Optional[str] = None,
-    **kwargs: Any
+    data_provider: Optional[str] = None, taxon: Optional[str] = None, **kwargs: Any
 ) -> List[Dict[str, str]]:
     """Build GraphQL params list from common filters.
 
