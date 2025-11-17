@@ -76,9 +76,6 @@ class TestAllOntologyTypes(unittest.TestCase):
 
     def test_all_ontology_types_accessible(self):
         """Test that all 45 ontology types can be searched."""
-        print("\n" + "=" * 80)
-        print("TESTING ALL 45 ONTOLOGY TYPES")
-        print("=" * 80)
 
         accessible_count = 0
         empty_count = 0
@@ -106,22 +103,16 @@ class TestAllOntologyTypes(unittest.TestCase):
                             f"{ont_type}: Expected ontology_type to match")
 
                         accessible_count += 1
-                        print(f"✅ {ont_type:<20} - Accessible (sample: {results[0].curie})")
                         found_result = True
                         break
 
                 if not found_result:
                     empty_count += 1
-                    print(f"⚠️  {ont_type:<20} - No results found with test terms")
 
             except Exception as e:
                 error_count += 1
-                print(f"❌ {ont_type:<20} - Error: {str(e)[:50]}")
                 self.fail(f"{ont_type} failed with error: {e}")
 
-        print("=" * 80)
-        print(f"RESULTS: {accessible_count} accessible, {empty_count} empty, {error_count} errors")
-        print("=" * 80)
 
         # All 45 should be accessible (based on our database query showing all have data)
         self.assertEqual(accessible_count, 45,
@@ -137,9 +128,6 @@ class TestAllOntologyTypes(unittest.TestCase):
             ('HPTerm', 'abnormal'),
         ]
 
-        print("\n" + "=" * 80)
-        print("TESTING SYNONYM SEARCH")
-        print("=" * 80)
 
         for ont_type, search_term in test_cases:
             # Search with synonyms
@@ -161,7 +149,6 @@ class TestAllOntologyTypes(unittest.TestCase):
             self.assertIsInstance(results_with_syn, list)
             self.assertIsInstance(results_without_syn, list)
 
-            print(f"{ont_type} '{search_term}': "
                   f"with_syn={len(results_with_syn)}, "
                   f"without_syn={len(results_without_syn)}")
 
@@ -179,9 +166,6 @@ class TestAllOntologyTypes(unittest.TestCase):
             ('CHEBITerm', 'water'),
         ]
 
-        print("\n" + "=" * 80)
-        print("TESTING EXACT VS PARTIAL MATCH")
-        print("=" * 80)
 
         for ont_type, search_term in test_cases:
             # Exact match
@@ -203,7 +187,6 @@ class TestAllOntologyTypes(unittest.TestCase):
             self.assertIsInstance(exact_results, list)
             self.assertIsInstance(partial_results, list)
 
-            print(f"{ont_type} '{search_term}': "
                   f"exact={len(exact_results)}, "
                   f"partial={len(partial_results)}")
 

@@ -44,8 +44,6 @@ class TestWBBTTermOntology(unittest.TestCase):
         self.assertIsNotNone(result.curie)
         self.assertIsNotNone(result.name)
 
-        print(f"\n✅ WBBTTerm 'cell': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_pharynx(self):
         """Test search for 'pharynx' in WBBTTerm."""
@@ -63,8 +61,6 @@ class TestWBBTTermOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ WBBTTerm 'pharynx': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_intestine(self):
         """Test search for 'intestine' in WBBTTerm."""
@@ -82,8 +78,6 @@ class TestWBBTTermOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ WBBTTerm 'intestine': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_synonym_search(self):
         """Test synonym search for WBBTTerm."""
@@ -104,7 +98,6 @@ class TestWBBTTermOntology(unittest.TestCase):
         self.assertIsInstance(results_with_syn, list)
         self.assertIsInstance(results_without_syn, list)
 
-        print(f"\n✅ WBBTTerm synonym search: "
               f"with_syn={len(results_with_syn)}, "
               f"without_syn={len(results_without_syn)}")
 
@@ -127,7 +120,6 @@ class TestWBBTTermOntology(unittest.TestCase):
         self.assertIsInstance(exact_results, list)
         self.assertIsInstance(partial_results, list)
 
-        print(f"\n✅ WBBTTerm exact vs partial: "
               f"exact={len(exact_results)}, "
               f"partial={len(partial_results)}")
 

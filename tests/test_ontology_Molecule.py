@@ -44,8 +44,6 @@ class TestMoleculeOntology(unittest.TestCase):
         self.assertIsNotNone(result.curie)
         self.assertIsNotNone(result.name)
 
-        print(f"\n✅ Molecule 'protein': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_molecule(self):
         """Test search for 'molecule' in Molecule."""
@@ -63,8 +61,6 @@ class TestMoleculeOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ Molecule 'molecule': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_zero(self):
         """Test search for '0' in Molecule."""
@@ -82,8 +78,6 @@ class TestMoleculeOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ Molecule '0': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_synonym_search(self):
         """Test synonym search for Molecule."""
@@ -104,7 +98,6 @@ class TestMoleculeOntology(unittest.TestCase):
         self.assertIsInstance(results_with_syn, list)
         self.assertIsInstance(results_without_syn, list)
 
-        print(f"\n✅ Molecule synonym search: "
               f"with_syn={len(results_with_syn)}, "
               f"without_syn={len(results_without_syn)}")
 
@@ -127,7 +120,6 @@ class TestMoleculeOntology(unittest.TestCase):
         self.assertIsInstance(exact_results, list)
         self.assertIsInstance(partial_results, list)
 
-        print(f"\n✅ Molecule exact vs partial: "
               f"exact={len(exact_results)}, "
               f"partial={len(partial_results)}")
 

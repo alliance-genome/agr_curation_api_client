@@ -44,8 +44,6 @@ class TestMATermOntology(unittest.TestCase):
         self.assertIsNotNone(result.curie)
         self.assertIsNotNone(result.name)
 
-        print(f"\n✅ MATerm 'brain': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_tissue(self):
         """Test search for 'tissue' in MATerm."""
@@ -63,8 +61,6 @@ class TestMATermOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ MATerm 'tissue': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_cell(self):
         """Test search for 'cell' in MATerm."""
@@ -82,8 +78,6 @@ class TestMATermOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ MATerm 'cell': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_synonym_search(self):
         """Test synonym search for MATerm."""
@@ -104,7 +98,6 @@ class TestMATermOntology(unittest.TestCase):
         self.assertIsInstance(results_with_syn, list)
         self.assertIsInstance(results_without_syn, list)
 
-        print(f"\n✅ MATerm synonym search: "
               f"with_syn={len(results_with_syn)}, "
               f"without_syn={len(results_without_syn)}")
 
@@ -127,7 +120,6 @@ class TestMATermOntology(unittest.TestCase):
         self.assertIsInstance(exact_results, list)
         self.assertIsInstance(partial_results, list)
 
-        print(f"\n✅ MATerm exact vs partial: "
               f"exact={len(exact_results)}, "
               f"partial={len(partial_results)}")
 

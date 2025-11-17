@@ -44,8 +44,6 @@ class TestCMOTermOntology(unittest.TestCase):
         self.assertIsNotNone(result.curie)
         self.assertIsNotNone(result.name)
 
-        print(f"\n✅ CMOTerm 'measurement': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_blood(self):
         """Test search for 'blood' in CMOTerm."""
@@ -63,8 +61,6 @@ class TestCMOTermOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ CMOTerm 'blood': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_search_pressure(self):
         """Test search for 'pressure' in CMOTerm."""
@@ -82,8 +78,6 @@ class TestCMOTermOntology(unittest.TestCase):
         self.assertIsInstance(result, OntologyTermResult)
         self.assertEqual(result.ontology_type, self.ontology_type)
 
-        print(f"\n✅ CMOTerm 'pressure': Found {len(results)} results")
-        print(f"   Sample: {result.curie} - {result.name}")
 
     def test_synonym_search(self):
         """Test synonym search for CMOTerm."""
@@ -104,7 +98,6 @@ class TestCMOTermOntology(unittest.TestCase):
         self.assertIsInstance(results_with_syn, list)
         self.assertIsInstance(results_without_syn, list)
 
-        print(f"\n✅ CMOTerm synonym search: "
               f"with_syn={len(results_with_syn)}, "
               f"without_syn={len(results_without_syn)}")
 
@@ -127,7 +120,6 @@ class TestCMOTermOntology(unittest.TestCase):
         self.assertIsInstance(exact_results, list)
         self.assertIsInstance(partial_results, list)
 
-        print(f"\n✅ CMOTerm exact vs partial: "
               f"exact={len(exact_results)}, "
               f"partial={len(partial_results)}")
 
