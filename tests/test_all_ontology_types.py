@@ -16,6 +16,8 @@ from agr_curation_api.db_methods import DatabaseMethods
 from agr_curation_api.models import OntologyTermResult
 
 
+@unittest.skipUnless(os.getenv('PERSISTENT_STORE_DB_HOST'),
+                     "Database integration tests require PERSISTENT_STORE_DB_* environment variables")
 class TestAllOntologyTypes(unittest.TestCase):
     """Test all 45 ontology types against production database."""
 
@@ -149,9 +151,6 @@ class TestAllOntologyTypes(unittest.TestCase):
             self.assertIsInstance(results_with_syn, list)
             self.assertIsInstance(results_without_syn, list)
 
-                  f"with_syn={len(results_with_syn)}, "
-                  f"without_syn={len(results_without_syn)}")
-
             # Results should be valid
             for result in results_with_syn[:1]:
                 self.assertIsInstance(result, OntologyTermResult)
@@ -186,9 +185,6 @@ class TestAllOntologyTypes(unittest.TestCase):
 
             self.assertIsInstance(exact_results, list)
             self.assertIsInstance(partial_results, list)
-
-                  f"exact={len(exact_results)}, "
-                  f"partial={len(partial_results)}")
 
             # Partial should generally have >= exact (might find more)
             # (Not always true, but usually)

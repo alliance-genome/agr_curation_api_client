@@ -17,6 +17,8 @@ from agr_curation_api.db_methods import DatabaseMethods
 from agr_curation_api.models import OntologyTermResult
 
 
+@unittest.skipUnless(os.getenv('PERSISTENT_STORE_DB_HOST'),
+                     "Database integration tests require PERSISTENT_STORE_DB_* environment variables")
 class TestOBITermOntology(unittest.TestCase):
     """Test OBITerm ontology type using unified ontologyterm table."""
 
@@ -98,8 +100,6 @@ class TestOBITermOntology(unittest.TestCase):
         self.assertIsInstance(results_with_syn, list)
         self.assertIsInstance(results_without_syn, list)
 
-              f"with_syn={len(results_with_syn)}, "
-              f"without_syn={len(results_without_syn)}")
 
     def test_exact_vs_partial_match(self):
         """Test exact match vs partial match for OBITerm."""
@@ -120,8 +120,6 @@ class TestOBITermOntology(unittest.TestCase):
         self.assertIsInstance(exact_results, list)
         self.assertIsInstance(partial_results, list)
 
-              f"exact={len(exact_results)}, "
-              f"partial={len(partial_results)}")
 
 
 if __name__ == '__main__':

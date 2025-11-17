@@ -15,6 +15,8 @@ from agr_curation_api.db_methods import DatabaseMethods
 from agr_curation_api.models import OntologyTermResult
 
 
+@unittest.skipUnless(os.getenv('PERSISTENT_STORE_DB_HOST'),
+                     "Database integration tests require PERSISTENT_STORE_DB_* environment variables")
 class TestMODTerm(unittest.TestCase):
     """Test MODTerm searches using unified ontologyterm table."""
 
