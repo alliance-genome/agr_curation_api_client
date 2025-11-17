@@ -13,6 +13,7 @@ A unified Python client for Alliance of Genome Resources (AGR) curation APIs.
 - **Multiple Data Sources**: Supports REST API, GraphQL, and direct database access
 - **Type Safety**: Full type hints and Pydantic models for request/response validation
 - **Entity Search**: Partial matching and synonym search for genes, alleles, and other entities
+- **Ontology Search**: Comprehensive search across 45 ontology types (GO, DO, HP, and more)
 - **Retry Logic**: Automatic retry with exponential backoff for transient failures
 - **Authentication**: Support for API key and Okta token authentication
 - **Async Support**: Built on httpx for both sync and async operations
@@ -257,6 +258,65 @@ print(f"Returned: {results.returned_records}")
 for gene_data in results.results:
     print(f"Found gene: {gene_data}")
 ```
+
+### Ontology Term Search
+
+The client provides comprehensive ontology term search with support for 45 different ontology types including GO, DO, HPTerm, and many more.
+
+```python
+# Search Gene Ontology terms
+go_results = client.db.search_ontology_terms(
+    term='apoptosis',
+    ontology_type='GOTerm',
+    include_synonyms=True,
+    limit=10
+)
+
+for result in go_results:
+    print(f"{result.curie}: {result.name}")
+    print(f"  Namespace: {result.namespace}")
+    print(f"  Synonyms: {', '.join(result.synonyms[:3])}")
+
+# Search Disease Ontology with exact matching
+disease_results = client.db.search_ontology_terms(
+    term='diabetes',
+    ontology_type='DOTerm',
+    exact_match=True,  # Only exact matches
+    limit=5
+)
+
+# Organism-specific convenience methods
+# Search C. elegans anatomy terms
+wb_anatomy = client.db.search_anatomy_terms(
+    term='pharynx',
+    data_provider='WB',  # C. elegans
+    limit=5
+)
+
+# Search Mouse life stages
+mouse_stages = client.db.search_life_stage_terms(
+    term='embryonic',
+    data_provider='MGI',  # Mouse
+    limit=5
+)
+
+# Search GO terms by aspect
+cellular_components = client.db.search_go_terms(
+    term='nucleus',
+    go_aspect='cellular_component',  # or 'biological_process', 'molecular_function'
+    limit=10
+)
+
+# Other convenience methods:
+# - search_disease_terms() - Disease Ontology (DO)
+# - search_phenotype_terms() - Phenotype ontologies (HP, MP, WBPhenotype)
+# - search_chemical_terms() - ChEBI chemical entities
+# - search_evidence_terms() - Evidence & Conclusion Ontology (ECO)
+# - search_taxon_terms() - NCBI Taxonomy
+# - search_sequence_terms() - Sequence Ontology (SO)
+```
+
+Supported ontology types include: APOTerm, ATPTerm, BSPOTerm, BTOTerm, CHEBITerm, CLTerm, CMOTerm, DAOTerm, DOTerm, ECOTerm, EMAPATerm, FBCVTerm, FBDVTerm, GENOTerm, GOTerm, HPTerm, MATerm, MITerm, MMOTerm, MMUSDVTerm, MODTerm, Molecule, MPATHTerm, MPTerm, NCBITaxonTerm, OBITerm, PATOTerm, PWTerm, ROTerm, RSTerm, SOTerm, UBERONTerm, VTTerm, WBBTTerm, WBLSTerm, WBPhenotypeTerm, XBATerm, XBEDTerm, XBSTerm, XCOTerm, XPOTerm, XSMOTerm, ZECOTerm, ZFATerm, ZFSTerm.
 
 ### Error Handling
 
