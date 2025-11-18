@@ -10,28 +10,17 @@ class APIConfig(BaseModel):
     """Configuration for AGR Curation API client."""
 
     base_url: HttpUrl = Field(
-        default_factory=lambda: HttpUrl(
-            os.getenv("ATEAM_API_URL", "https://curation.alliancegenome.org/api")
-        ),
-        description="Base URL for the A-Team Curation API"
+        default_factory=lambda: HttpUrl(os.getenv("ATEAM_API_URL", "https://curation.alliancegenome.org/api")),
+        description="Base URL for the A-Team Curation API",
     )
     okta_token: Optional[str] = Field(None, description="Okta bearer token for authentication")
-    timeout: timedelta = Field(
-        default=timedelta(seconds=30),
-        description="Request timeout"
-    )
+    timeout: timedelta = Field(default=timedelta(seconds=30), description="Request timeout")
     max_retries: int = Field(3, ge=0, description="Maximum number of retry attempts")
-    retry_delay: timedelta = Field(
-        default=timedelta(seconds=1),
-        description="Delay between retry attempts"
-    )
+    retry_delay: timedelta = Field(default=timedelta(seconds=1), description="Delay between retry attempts")
     verify_ssl: bool = Field(True, description="Whether to verify SSL certificates")
-    headers: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Additional headers to include in requests"
-    )
+    headers: Dict[str, str] = Field(default_factory=dict, description="Additional headers to include in requests")
 
-    @field_validator('timeout', 'retry_delay')
+    @field_validator("timeout", "retry_delay")
     def validate_timedelta(cls, v: timedelta) -> timedelta:
         """Ensure timedelta is positive."""
         if v.total_seconds() <= 0:
@@ -41,9 +30,7 @@ class APIConfig(BaseModel):
     class Config:
         """Pydantic config."""
 
-        json_encoders = {
-            timedelta: lambda v: v.total_seconds()
-        }
+        json_encoders = {timedelta: lambda v: v.total_seconds()}
 
 
 class APIResponse(BaseModel):
@@ -58,6 +45,7 @@ class APIResponse(BaseModel):
 
 # API Response Models that match actual AGR Curation API responses
 
+
 class Person(BaseModel):
     """Person model for createdBy/updatedBy fields."""
 
@@ -66,7 +54,7 @@ class Person(BaseModel):
     dateCreated: Optional[datetime] = None
     dateUpdated: Optional[datetime] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class ResourceDescriptorPage(BaseModel):
@@ -78,7 +66,7 @@ class ResourceDescriptorPage(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class CrossReference(BaseModel):
@@ -100,7 +88,7 @@ class CrossReference(BaseModel):
     referencedCurie: Optional[str] = None
     url: Optional[str] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class DataProvider(BaseModel):
@@ -116,14 +104,14 @@ class DataProvider(BaseModel):
     sourceOrganization: Optional[str] = None
     crossReference: Optional[CrossReference] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def extract_source_organization(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Extract sourceOrganization from abbreviation if not present."""
-        if 'sourceOrganization' not in values and 'abbreviation' in values:
-            values['sourceOrganization'] = values['abbreviation']
+        if "sourceOrganization" not in values and "abbreviation" in values:
+            values["sourceOrganization"] = values["abbreviation"]
         return values
 
 
@@ -136,7 +124,7 @@ class NameType(BaseModel):
     name: Optional[str] = None
     definition: Optional[str] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class SynonymScope(BaseModel):
@@ -147,7 +135,7 @@ class SynonymScope(BaseModel):
     obsolete: Optional[bool] = None
     name: Optional[str] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class SlotAnnotation(BaseModel):
@@ -164,7 +152,7 @@ class SlotAnnotation(BaseModel):
     nameType: Optional[Union[str, NameType]] = None
     synonymScope: Optional[Union[str, SynonymScope]] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class SecondaryId(BaseModel):
@@ -177,7 +165,7 @@ class SecondaryId(BaseModel):
     dbDateUpdated: Optional[datetime] = None
     secondaryId: Optional[str] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class Gene(BaseModel):
@@ -212,14 +200,14 @@ class Gene(BaseModel):
     obsolete: Optional[bool] = None
     internal: Optional[bool] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def handle_curie(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Use primaryExternalId as curie if curie is missing."""
-        if 'curie' not in values and 'primaryExternalId' in values:
-            values['curie'] = values['primaryExternalId']
+        if "curie" not in values and "primaryExternalId" in values:
+            values["curie"] = values["primaryExternalId"]
         return values
 
 
@@ -252,14 +240,14 @@ class Allele(BaseModel):
     laboratoryOfOrigin: Optional[Any] = None
     references: Optional[List[Any]] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def handle_curie(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Use primaryExternalId as curie if curie is missing."""
-        if 'curie' not in values and 'primaryExternalId' in values:
-            values['curie'] = values['primaryExternalId']
+        if "curie" not in values and "primaryExternalId" in values:
+            values["curie"] = values["primaryExternalId"]
         return values
 
 
@@ -282,7 +270,7 @@ class Species(BaseModel):
     obsolete: Optional[bool] = None
     internal: Optional[bool] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class NCBITaxonTerm(BaseModel):
@@ -317,7 +305,7 @@ class NCBITaxonTerm(BaseModel):
     obsolete: Optional[bool] = None
     internal: Optional[bool] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class OntologyTerm(BaseModel):
@@ -338,31 +326,36 @@ class OntologyTerm(BaseModel):
     descendantCount: Optional[int] = None
     ancestors: Optional[List[str]] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
+
+
+class OntologyTermResult(BaseModel):
+    """Ontology term result from database search.
+
+    Used for direct database queries that include synonym information.
+    This is separate from OntologyTerm which represents API responses.
+    """
+
+    curie: str = Field(..., description="Ontology term CURIE (e.g., 'WBbt:0005062')")
+    name: str = Field(..., description="Canonical term name")
+    namespace: str = Field(..., description="Ontology namespace")
+    definition: Optional[str] = Field(None, description="Term definition")
+    ontology_type: str = Field(..., description="Ontology term type (e.g., 'WBBTTerm', 'GOTerm')")
+    synonyms: List[str] = Field(default_factory=list, description="List of synonyms")
+
+    model_config = ConfigDict(extra="allow")
 
 
 class ExpressionAnnotation(BaseModel):
     """Expression annotation model from A-Team curation API."""
 
     curie: Optional[str] = Field(None, description="Compact URI")
-    expressionAnnotationSubject: Optional[dict] = Field(
-        None,
-        description="Expression annotation subject"
-    )
-    expressionPattern: Optional[dict] = Field(
-        None,
-        description="Expression pattern"
-    )
-    whenExpressedStageName: Optional[str] = Field(
-        None,
-        description="Human-readable stage name"
-    )
-    whereExpressedStatement: Optional[str] = Field(
-        None,
-        description="Where expressed statement"
-    )
+    expressionAnnotationSubject: Optional[dict] = Field(None, description="Expression annotation subject")
+    expressionPattern: Optional[dict] = Field(None, description="Expression pattern")
+    whenExpressedStageName: Optional[str] = Field(None, description="Human-readable stage name")
+    whereExpressedStatement: Optional[str] = Field(None, description="Where expressed statement")
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
 
 class AffectedGenomicModel(BaseModel):
@@ -392,4 +385,4 @@ class AffectedGenomicModel(BaseModel):
     parentalPopulations: Optional[List[Dict[str, Any]]] = None
     sequenceTargetingReagents: Optional[List[Dict[str, Any]]] = None
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")

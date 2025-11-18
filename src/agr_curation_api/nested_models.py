@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 # Base Models
 class SlotAnnotation(BaseModel):
     """Base class for slot annotations."""
+
     evidence: Optional[List[str]] = Field(None, description="Supporting evidence")
     internal: Optional[bool] = Field(False, description="Whether annotation is internal")
     obsolete: Optional[bool] = Field(False, description="Whether annotation is obsolete")
@@ -27,6 +28,7 @@ class SlotAnnotation(BaseModel):
 
 class NameSlotAnnotation(SlotAnnotation):
     """Name-related slot annotation."""
+
     display_text: str = Field(..., alias="displayText", description="Display text for the name")
     format_text: str = Field(..., alias="formatText", description="Formatted text for the name")
     name_type: Optional[str] = Field(None, alias="nameType", description="Type of name")
@@ -40,6 +42,7 @@ class NameSlotAnnotation(SlotAnnotation):
 # Taxon/Species Models
 class NCBITaxonTerm(BaseModel):
     """NCBI Taxon term."""
+
     curie: str = Field(..., description="NCBI Taxon ID (e.g., NCBITaxon:9606)")
     name: Optional[str] = Field(None, description="Scientific name")
     common_name: Optional[str] = Field(None, alias="commonName")
@@ -54,6 +57,7 @@ class NCBITaxonTerm(BaseModel):
 # Ontology Term Models
 class SOTerm(BaseModel):
     """Sequence Ontology term."""
+
     curie: str = Field(..., description="SO term ID (e.g., SO:0000704)")
     name: Optional[str] = Field(None, description="Term name")
     definition: Optional[str] = Field(None)
@@ -66,6 +70,7 @@ class SOTerm(BaseModel):
 
 class GOTerm(BaseModel):
     """Gene Ontology term."""
+
     curie: str = Field(..., description="GO term ID (e.g., GO:0008150)")
     name: Optional[str] = Field(None, description="Term name")
     definition: Optional[str] = Field(None)
@@ -78,6 +83,7 @@ class GOTerm(BaseModel):
 
 class VocabularyTerm(BaseModel):
     """Controlled vocabulary term."""
+
     name: str = Field(..., description="Term name")
     abbreviation: Optional[str] = Field(None)
     definition: Optional[str] = Field(None)
@@ -91,6 +97,7 @@ class VocabularyTerm(BaseModel):
 # Cross Reference Models
 class CrossReference(BaseModel):
     """Cross reference to external database."""
+
     referenced_curie: str = Field(..., alias="referencedCurie", description="External database ID")
     display_name: Optional[str] = Field(None, alias="displayName")
     prefix: Optional[str] = Field(None, description="Database prefix")
@@ -105,7 +112,10 @@ class CrossReference(BaseModel):
 
 class DataProvider(BaseModel):
     """Data provider information."""
-    source_organization: str = Field(..., alias="sourceOrganization", description="Organization abbreviation (e.g., WB, MGI)")
+
+    source_organization: str = Field(
+        ..., alias="sourceOrganization", description="Organization abbreviation (e.g., WB, MGI)"
+    )
     cross_reference: Optional[CrossReference] = Field(None, alias="crossReference")
 
     class Config:
@@ -115,6 +125,7 @@ class DataProvider(BaseModel):
 # Reference Models
 class PublicationRef(BaseModel):
     """Reference to a publication."""
+
     curie: Optional[str] = Field(None, description="Reference ID")
     cross_references: Optional[List[CrossReference]] = Field(None, alias="crossReferences")
 
@@ -125,26 +136,31 @@ class PublicationRef(BaseModel):
 # Gene-specific Models
 class GeneSymbolSlotAnnotation(NameSlotAnnotation):
     """Gene symbol annotation."""
+
     pass
 
 
 class GeneFullNameSlotAnnotation(NameSlotAnnotation):
     """Gene full name annotation."""
+
     pass
 
 
 class GeneSystematicNameSlotAnnotation(NameSlotAnnotation):
     """Gene systematic name annotation."""
+
     pass
 
 
 class GeneSynonymSlotAnnotation(NameSlotAnnotation):
     """Gene synonym annotation."""
+
     pass
 
 
 class GeneSecondaryIdSlotAnnotation(SlotAnnotation):
     """Gene secondary ID annotation."""
+
     secondary_id: str = Field(..., alias="secondaryId")
 
     class Config:
@@ -154,22 +170,26 @@ class GeneSecondaryIdSlotAnnotation(SlotAnnotation):
 # Allele-specific Models
 class AlleleSymbolSlotAnnotation(NameSlotAnnotation):
     """Allele symbol annotation."""
+
     pass
 
 
 class AlleleFullNameSlotAnnotation(NameSlotAnnotation):
     """Allele full name annotation."""
+
     pass
 
 
 class AlleleSynonymSlotAnnotation(NameSlotAnnotation):
     """Allele synonym annotation."""
+
     pass
 
 
 # Agent/Person Models
 class Laboratory(BaseModel):
     """Laboratory information."""
+
     abbreviation: str = Field(..., description="Lab abbreviation")
     name: Optional[str] = Field(None, description="Full lab name")
     pi_name: Optional[str] = Field(None, alias="piName", description="Principal investigator")
@@ -181,6 +201,7 @@ class Laboratory(BaseModel):
 
 class Person(BaseModel):
     """Person information."""
+
     unique_id: Optional[str] = Field(None, alias="uniqueId")
     first_name: Optional[str] = Field(None, alias="firstName")
     last_name: Optional[str] = Field(None, alias="lastName")
@@ -194,6 +215,7 @@ class Person(BaseModel):
 # Association Models
 class GeneGenomicLocationAssociation(BaseModel):
     """Association between a gene and its genomic location."""
+
     gene_association_subject: Optional[str] = Field(None, alias="geneAssociationSubject")
     gene_genomic_location_association_object: Optional[str] = Field(None, alias="geneGenomicLocationAssociationObject")
     start: Optional[int] = Field(None, description="Start position")
@@ -209,6 +231,7 @@ class GeneGenomicLocationAssociation(BaseModel):
 
 class AlleleGeneAssociation(BaseModel):
     """Association between an allele and a gene."""
+
     allele_association_subject: Optional[str] = Field(None, alias="alleleAssociationSubject")
     allele_gene_association_object: Optional[str] = Field(None, alias="alleleGeneAssociationObject")
     relation: Optional[str] = Field(None, description="Relationship type")
@@ -221,6 +244,7 @@ class AlleleGeneAssociation(BaseModel):
 # Note Models
 class Note(BaseModel):
     """Note or comment."""
+
     note_type: Optional[VocabularyTerm] = Field(None, alias="noteType")
     free_text: str = Field(..., alias="freeText", description="Note content")
     evidence: Optional[List[PublicationRef]] = Field(None)

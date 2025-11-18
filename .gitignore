@@ -143,4 +143,11 @@ tmp/
 scripts/local_db_tunnel_env.sh
 
 # Documentation
-CLAUDE.md
+CLAUDE.md*_SUMMARY.md
+*_ANALYSIS.md
+*_IMPLEMENTATION.md
+
+# Local documentation
+docs/
+scripts/local_db_tunnel.sh
+scripts/local_db_tunnel_env.sh

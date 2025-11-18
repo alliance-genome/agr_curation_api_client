@@ -7,8 +7,10 @@ from agr_curation_api.exceptions import AGRAuthenticationError
 
 
 @pytest.mark.skipif(
-    not all(os.environ.get(var) for var in ['OKTA_DOMAIN', 'OKTA_API_AUDIENCE', 'OKTA_CLIENT_ID', 'OKTA_CLIENT_SECRET']),
-    reason="Okta environment variables not set"
+    not all(
+        os.environ.get(var) for var in ["OKTA_DOMAIN", "OKTA_API_AUDIENCE", "OKTA_CLIENT_ID", "OKTA_CLIENT_SECRET"]
+    ),
+    reason="Okta environment variables not set",
 )
 def test_automatic_authentication():
     """Test automatic authentication using environment variables."""
@@ -24,15 +26,15 @@ def test_automatic_authentication():
     # Verify species have expected attributes
     if species_list:
         first_species = species_list[0]
-        assert hasattr(first_species, 'abbreviation')
-        assert hasattr(first_species, 'display_name')
+        assert hasattr(first_species, "abbreviation")
+        assert hasattr(first_species, "display_name")
 
 
 def test_missing_environment_variables():
     """Test behavior when Okta environment variables are missing."""
     # Save current environment
     saved_env = {}
-    okta_vars = ['OKTA_DOMAIN', 'OKTA_API_AUDIENCE', 'OKTA_CLIENT_ID', 'OKTA_CLIENT_SECRET']
+    okta_vars = ["OKTA_DOMAIN", "OKTA_API_AUDIENCE", "OKTA_CLIENT_ID", "OKTA_CLIENT_SECRET"]
 
     for var in okta_vars:
         saved_env[var] = os.environ.get(var)
@@ -62,10 +64,13 @@ def test_invalid_token():
         client.get_species()
 
 
-@pytest.mark.parametrize("endpoint,method", [
-    ("species", "get_species"),
-    ("gene/find", "get_genes"),
-])
+@pytest.mark.parametrize(
+    "endpoint,method",
+    [
+        ("species", "get_species"),
+        ("gene/find", "get_genes"),
+    ],
+)
 def test_authenticated_endpoints(endpoint, method):
     """Test that various endpoints require authentication."""
     # Create client with invalid token

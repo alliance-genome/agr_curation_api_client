@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import ValidationError
 
-from .models import Gene, Allele
+from .models import Gene, Allele, OntologyTermResult
 from .exceptions import AGRAPIError
 
 logger = logging.getLogger(__name__)
@@ -28,11 +28,11 @@ class DatabaseConfig:
 
     def __init__(self) -> None:
         """Initialize database configuration from environment variables."""
-        self.username = environ.get('PERSISTENT_STORE_DB_USERNAME', 'unknown')
-        self.password = environ.get('PERSISTENT_STORE_DB_PASSWORD', 'unknown')
-        self.host = environ.get('PERSISTENT_STORE_DB_HOST', 'localhost')
-        self.port = environ.get('PERSISTENT_STORE_DB_PORT', '5432')
-        self.database = environ.get('PERSISTENT_STORE_DB_NAME', 'unknown')
+        self.username = environ.get("PERSISTENT_STORE_DB_USERNAME", "unknown")
+        self.password = environ.get("PERSISTENT_STORE_DB_PASSWORD", "unknown")
+        self.host = environ.get("PERSISTENT_STORE_DB_HOST", "localhost")
+        self.port = environ.get("PERSISTENT_STORE_DB_PORT", "5432")
+        self.database = environ.get("PERSISTENT_STORE_DB_NAME", "unknown")
 
     @property
     def connection_string(self) -> str:
@@ -63,11 +63,7 @@ class DatabaseMethods:
         """Get or create session factory."""
         if self._session_factory is None:
             engine = self._get_engine()
-            self._session_factory = sessionmaker(
-                bind=engine,
-                autoflush=False,
-                autocommit=False
-            )
+            self._session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
         return self._session_factory
 
     def _create_session(self) -> Session:
@@ -80,7 +76,7 @@ class DatabaseMethods:
         taxon_curie: str,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
-        include_obsolete: bool = False
+        include_obsolete: bool = False,
     ) -> List[Gene]:
         """Get genes from the database by taxon.
 
@@ -103,13 +99,18 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             # Build WHERE clause based on include_obsolete parameter
-            obsolete_filter = "" if include_obsolete else """
+            obsolete_filter = (
+                ""
+                if include_obsolete
+                else """
                 slota.obsolete = false
             AND
                 be.obsolete = false
             AND"""
+            )
 
-            sql_query = text(f"""
+            sql_query = text(
+                f"""
             SELECT
                 be.primaryexternalid as "primaryExternalId",
                 slota.displaytext as geneSymbol
@@ -124,7 +125,8 @@ class DatabaseMethods:
                 taxon.curie = :species_taxon
             ORDER BY
                 be.primaryexternalid
-            """)
+            """
+            )
 
             # Add pagination if specified
             if limit is not None:
@@ -132,19 +134,16 @@ class DatabaseMethods:
             if offset is not None:
                 sql_query = text(str(sql_query) + f" OFFSET {offset}")
 
-            rows = session.execute(sql_query, {'species_taxon': taxon_curie}).fetchall()
+            rows = session.execute(sql_query, {"species_taxon": taxon_curie}).fetchall()
 
             genes = []
             for row in rows:
                 try:
                     # Create minimal Gene object from database results
                     gene_data = {
-                        'primaryExternalId': row[0],
-                        'curie': row[0],  # Use primaryExternalId as curie
-                        'geneSymbol': {
-                            'displayText': row[1],
-                            'formatText': row[1]
-                        }
+                        "primaryExternalId": row[0],
+                        "curie": row[0],  # Use primaryExternalId as curie
+                        "geneSymbol": {"displayText": row[1], "formatText": row[1]},
                     }
                     gene = Gene(**gene_data)
                     genes.append(gene)
@@ -159,10 +158,7 @@ class DatabaseMethods:
             session.close()
 
     def get_genes_raw(
-        self,
-        taxon_curie: str,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None
+        self, taxon_curie: str, limit: Optional[int] = None, offset: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get genes as raw dictionary data.
 
@@ -179,7 +175,8 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT
                 be.primaryexternalid as geneId,
                 slota.displaytext as geneSymbol
@@ -197,7 +194,8 @@ class DatabaseMethods:
                 taxon.curie = :species_taxon
             ORDER BY
                 be.primaryexternalid
-            """)
+            """
+            )
 
             # Add pagination if specified
             if limit is not None:
@@ -205,7 +203,7 @@ class DatabaseMethods:
             if offset is not None:
                 sql_query = text(str(sql_query) + f" OFFSET {offset}")
 
-            rows = session.execute(sql_query, {'species_taxon': taxon_curie}).fetchall()
+            rows = session.execute(sql_query, {"species_taxon": taxon_curie}).fetchall()
             return [{"gene_id": row[0], "gene_symbol": row[1]} for row in rows]
 
         except Exception as e:
@@ -213,10 +211,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def get_gene(
-        self,
-        gene_id: str
-    ) -> Optional[Gene]:
+    def get_gene(self, gene_id: str) -> Optional[Gene]:
         """Get a specific gene by ID from the database.
 
         This uses direct SQL queries to fetch complete gene information
@@ -238,7 +233,8 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             # Query to get complete gene information
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT
                 be.primaryexternalid,
                 be.curie,
@@ -269,46 +265,38 @@ class DatabaseMethods:
             WHERE
                 be.primaryexternalid = :gene_id
             LIMIT 1
-            """)
+            """
+            )
 
-            row = session.execute(sql_query, {'gene_id': gene_id}).fetchone()
+            row = session.execute(sql_query, {"gene_id": gene_id}).fetchone()
 
             if row is None:
                 return None
 
             # Build Gene object from query results
             gene_data = {
-                'primaryExternalId': row[0],
-                'curie': row[1] or row[0],  # Use primaryExternalId as fallback
-                'obsolete': row[2],
-                'internal': row[3],
-                'taxon': row[4],
+                "primaryExternalId": row[0],
+                "curie": row[1] or row[0],  # Use primaryExternalId as fallback
+                "obsolete": row[2],
+                "internal": row[3],
+                "taxon": row[4],
             }
 
             # Add gene type if available
             if row[5]:
-                gene_data['geneType'] = {'name': row[5]}
+                gene_data["geneType"] = {"name": row[5]}
 
             # Add gene symbol if available
             if row[6]:
-                gene_data['geneSymbol'] = {
-                    'displayText': row[6],
-                    'formatText': row[7] or row[6]
-                }
+                gene_data["geneSymbol"] = {"displayText": row[6], "formatText": row[7] or row[6]}
 
             # Add gene full name if available
             if row[8]:
-                gene_data['geneFullName'] = {
-                    'displayText': row[8],
-                    'formatText': row[9] or row[8]
-                }
+                gene_data["geneFullName"] = {"displayText": row[8], "formatText": row[9] or row[8]}
 
             # Add gene systematic name if available
             if row[10]:
-                gene_data['geneSystematicName'] = {
-                    'displayText': row[10],
-                    'formatText': row[11] or row[10]
-                }
+                gene_data["geneSystematicName"] = {"displayText": row[10], "formatText": row[11] or row[10]}
 
             try:
                 gene = Gene(**gene_data)
@@ -327,7 +315,7 @@ class DatabaseMethods:
         taxon_curie: str,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
-        wb_extraction_subset: bool = False
+        wb_extraction_subset: bool = False,
     ) -> List[Allele]:
         """Get alleles from the database by taxon.
 
@@ -362,7 +350,8 @@ class DatabaseMethods:
         try:
             if wb_extraction_subset:
                 # Special query for WB allele extraction
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT DISTINCT
                     be.primaryexternalid,
                     sa.displaytext
@@ -384,7 +373,8 @@ class DatabaseMethods:
                 AND ot.curie = 'NCBITaxon:6239'
                 ORDER BY
                     be.primaryexternalid
-                """)
+                """
+                )
 
                 # Add pagination if specified
                 if limit is not None:
@@ -395,7 +385,8 @@ class DatabaseMethods:
                 rows = session.execute(sql_query).fetchall()
             else:
                 # Standard allele query
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT
                     be.primaryexternalid as "primaryExternalId",
                     slota.displaytext as alleleSymbol
@@ -414,7 +405,8 @@ class DatabaseMethods:
                     taxon.curie = :taxon_curie
                 ORDER BY
                     be.primaryexternalid
-                """)
+                """
+                )
 
                 # Add pagination if specified
                 if limit is not None:
@@ -422,19 +414,16 @@ class DatabaseMethods:
                 if offset is not None:
                     sql_query = text(str(sql_query) + f" OFFSET {offset}")
 
-                rows = session.execute(sql_query, {'taxon_curie': taxon_curie}).fetchall()
+                rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).fetchall()
 
             alleles = []
             for row in rows:
                 try:
                     # Create minimal Allele object from database results
                     allele_data = {
-                        'primaryExternalId': row[0],
-                        'curie': row[0],  # Use primaryExternalId as curie
-                        'alleleSymbol': {
-                            'displayText': row[1],
-                            'formatText': row[1]
-                        }
+                        "primaryExternalId": row[0],
+                        "curie": row[0],  # Use primaryExternalId as curie
+                        "alleleSymbol": {"displayText": row[1], "formatText": row[1]},
                     }
                     allele = Allele(**allele_data)
                     alleles.append(allele)
@@ -449,10 +438,7 @@ class DatabaseMethods:
             session.close()
 
     def get_alleles_raw(
-        self,
-        taxon_curie: str,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None
+        self, taxon_curie: str, limit: Optional[int] = None, offset: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get alleles as raw dictionary data.
 
@@ -469,7 +455,8 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT
                 be.primaryexternalid as alleleId,
                 slota.displaytext as alleleSymbol
@@ -488,7 +475,8 @@ class DatabaseMethods:
                 taxon.curie = :taxon_curie
             ORDER BY
                 be.primaryexternalid
-            """)
+            """
+            )
 
             # Add pagination if specified
             if limit is not None:
@@ -496,7 +484,7 @@ class DatabaseMethods:
             if offset is not None:
                 sql_query = text(str(sql_query) + f" OFFSET {offset}")
 
-            rows = session.execute(sql_query, {'taxon_curie': taxon_curie}).fetchall()
+            rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).fetchall()
             return [{"allele_id": row[0], "allele_symbol": row[1]} for row in rows]
 
         except Exception as e:
@@ -504,10 +492,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def get_allele(
-        self,
-        allele_id: str
-    ) -> Optional[Allele]:
+    def get_allele(self, allele_id: str) -> Optional[Allele]:
         """Get a specific allele by ID from the database.
 
         This uses direct SQL queries to fetch complete allele information
@@ -530,7 +515,8 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             # Query to get complete allele information
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT
                 be.primaryexternalid,
                 be.curie,
@@ -557,21 +543,22 @@ class DatabaseMethods:
             WHERE
                 be.primaryexternalid = :allele_id
             LIMIT 1
-            """)
+            """
+            )
 
-            row = session.execute(sql_query, {'allele_id': allele_id}).fetchone()
+            row = session.execute(sql_query, {"allele_id": allele_id}).fetchone()
 
             if row is None:
                 return None
 
             # Build Allele object from query results
             allele_data = {
-                'primaryExternalId': row[0],
-                'curie': row[1] or row[0],  # Use primaryExternalId as fallback
-                'obsolete': row[2],
-                'internal': row[3],
-                'taxon': row[4],
-                'isExtinct': row[5],
+                "primaryExternalId": row[0],
+                "curie": row[1] or row[0],  # Use primaryExternalId as fallback
+                "obsolete": row[2],
+                "internal": row[3],
+                "taxon": row[4],
+                "isExtinct": row[5],
             }
 
             # Add collection name if available (not in standard Allele model, but useful)
@@ -579,17 +566,11 @@ class DatabaseMethods:
 
             # Add allele symbol if available
             if row[7]:
-                allele_data['alleleSymbol'] = {
-                    'displayText': row[7],
-                    'formatText': row[8] or row[7]
-                }
+                allele_data["alleleSymbol"] = {"displayText": row[7], "formatText": row[8] or row[7]}
 
             # Add allele full name if available
             if row[9]:
-                allele_data['alleleFullName'] = {
-                    'displayText': row[9],
-                    'formatText': row[10] or row[9]
-                }
+                allele_data["alleleFullName"] = {"displayText": row[9], "formatText": row[10] or row[9]}
 
             try:
                 allele = Allele(**allele_data)
@@ -604,10 +585,7 @@ class DatabaseMethods:
             session.close()
 
     # Expression annotation methods
-    def get_expression_annotations(
-        self,
-        taxon_curie: str
-    ) -> List[Dict[str, str]]:
+    def get_expression_annotations(self, taxon_curie: str) -> List[Dict[str, str]]:
         """Get expression annotations from the A-team database.
 
         Args:
@@ -621,7 +599,8 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT
                 be.primaryexternalid geneId,
                 slota.displaytext geneSymbol,
@@ -643,8 +622,9 @@ class DatabaseMethods:
             AND
                 ot.curie <> 'WBbt:0000100'
             AND ot_taxon.curie = :taxon_id
-            """)
-            rows = session.execute(sql_query, {'taxon_id': taxon_curie}).fetchall()
+            """
+            )
+            rows = session.execute(sql_query, {"taxon_id": taxon_curie}).fetchall()
             return [{"gene_id": row[0], "gene_symbol": row[1], "anatomy_id": row[2]} for row in rows]
         except Exception as e:
             raise AGRAPIError(f"Database query failed: {str(e)}")
@@ -652,10 +632,7 @@ class DatabaseMethods:
             session.close()
 
     # Ontology methods
-    def get_ontology_pairs(
-        self,
-        curie_prefix: str
-    ) -> List[Dict[str, Any]]:
+    def get_ontology_pairs(self, curie_prefix: str) -> List[Dict[str, Any]]:
         """Get ontology term parent-child relationships.
 
         Args:
@@ -669,7 +646,8 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT DISTINCT
                 otp.curie parentCurie,
                 otp.name parentName,
@@ -689,8 +667,9 @@ class DatabaseMethods:
                 otpc.distance = 1
             AND
                 otpc.closuretypes in ('["part_of"]', '["is_a"]')
-            """)
-            rows = session.execute(sql_query, {'curieprefix': f"{curie_prefix}%"}).fetchall()
+            """
+            )
+            rows = session.execute(sql_query, {"curieprefix": f"{curie_prefix}%"}).fetchall()
             return [
                 {
                     "parent_curie": row[0],
@@ -701,8 +680,10 @@ class DatabaseMethods:
                     "child_name": row[5],
                     "child_type": row[6],
                     "child_is_obsolete": row[7],
-                    "rel_type": row[8]
-                } for row in rows]
+                    "rel_type": row[8],
+                }
+                for row in rows
+            ]
         except Exception as e:
             raise AGRAPIError(f"Database query failed: {str(e)}")
         finally:
@@ -721,7 +702,8 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT
                 s.displayName, t.curie
             FROM
@@ -732,7 +714,8 @@ class DatabaseMethods:
                 s.obsolete = false
             AND
                 s.assembly_curie is not null
-            """)
+            """
+            )
             rows = session.execute(sql_query).fetchall()
             return [(row[0], row[1]) for row in rows]
         except Exception as e:
@@ -741,10 +724,7 @@ class DatabaseMethods:
             session.close()
 
     # Disease annotation methods
-    def get_disease_annotations(
-        self,
-        taxon_curie: str
-    ) -> List[Dict[str, str]]:
+    def get_disease_annotations(self, taxon_curie: str) -> List[Dict[str, str]]:
         """Get direct and indirect disease ontology (DO) annotations.
 
         This retrieves disease annotations from multiple sources:
@@ -765,7 +745,8 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             # Combined query using UNION to get all disease annotations in one go
-            union_query = text("""
+            union_query = text(
+                """
                 -- Direct gene -> DO term annotations
                 SELECT
                     be.primaryexternalid AS "geneId",
@@ -915,7 +896,8 @@ class DatabaseMethods:
                 AND rel.name = 'is_implicated_in'
                 AND slota_subject.obsolete = false
                 AND be_subject.obsolete = false
-            """)
+            """
+            )
 
             # Execute the combined query
             rows = session.execute(union_query, {"taxon_id": taxon_curie}).mappings().all()
@@ -930,12 +912,14 @@ class DatabaseMethods:
                 relationship_type = row["relationshipType"]
                 key = (gene_id, gene_symbol, do_id, relationship_type)
                 if key not in seen:
-                    results.append({
-                        "gene_id": gene_id,
-                        "gene_symbol": gene_symbol,
-                        "do_id": do_id,
-                        "relationship_type": relationship_type
-                    })
+                    results.append(
+                        {
+                            "gene_id": gene_id,
+                            "gene_symbol": gene_symbol,
+                            "do_id": do_id,
+                            "relationship_type": relationship_type,
+                        }
+                    )
                     seen.add(key)
             return results
         except Exception as e:
@@ -944,10 +928,7 @@ class DatabaseMethods:
             session.close()
 
     # Ortholog methods
-    def get_best_human_orthologs_for_taxon(
-        self,
-        taxon_curie: str
-    ) -> Dict[str, tuple]:
+    def get_best_human_orthologs_for_taxon(self, taxon_curie: str) -> Dict[str, tuple]:
         """Get the best human orthologs for all genes from a given species.
 
         Args:
@@ -964,7 +945,8 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT
                 subj_be.primaryexternalid AS gene_id,
                 subj_slota.displaytext AS gene_symbol,
@@ -991,15 +973,17 @@ class DatabaseMethods:
               AND subj_be.obsolete = false
               AND obj_be.obsolete = false
             GROUP BY gto.subjectgene_id, gto.objectgene_id, subj_be.primaryexternalid, subj_slota.displaytext, obj_be.primaryexternalid, obj_slota.displaytext, obj_full_name_slota.displaytext
-            """)
-            rows = session.execute(sql_query, {'taxon_curie': taxon_curie}).mappings().all()
+            """
+            )
+            rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).mappings().all()
 
             from collections import defaultdict
+
             gene_orthologs = defaultdict(list)
             for row in rows:
-                gene_id = row['gene_id']
-                ortho_info = [row['ortho_id'], row['ortho_symbol'], row['ortho_full_name']]
-                method_count = row['method_count']
+                gene_id = row["gene_id"]
+                ortho_info = [row["ortho_id"], row["ortho_symbol"], row["ortho_full_name"]]
+                method_count = row["method_count"]
                 gene_orthologs[gene_id].append((ortho_info, method_count))
 
             result = {}
@@ -1018,10 +1002,7 @@ class DatabaseMethods:
 
     # Entity mapping methods (from agr_literature_service ateam_db_helpers.py)
     def map_entity_names_to_curies(
-        self,
-        entity_type: str,
-        entity_names: List[str],
-        taxon_curie: str
+        self, entity_type: str, entity_names: List[str], taxon_curie: str
     ) -> List[Dict[str, Any]]:
         """Map entity names to their CURIEs by searching slot annotations.
 
@@ -1044,8 +1025,9 @@ class DatabaseMethods:
             entity_type = entity_type.lower()
             entity_names_upper = [name.upper() for name in entity_names]
 
-            if entity_type == 'gene':
-                sql_query = text("""
+            if entity_type == "gene":
+                sql_query = text(
+                    """
                 SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singlegene_id
@@ -1057,9 +1039,11 @@ class DatabaseMethods:
                 )
                 AND UPPER(sa.displaytext) IN :entity_name_list
                 AND ot.curie = :taxon
-                """)
-            elif entity_type == 'allele':
-                sql_query = text("""
+                """
+                )
+            elif entity_type == "allele":
+                sql_query = text(
+                    """
                 SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleallele_id
@@ -1067,9 +1051,11 @@ class DatabaseMethods:
                 WHERE sa.slotannotationtype = 'AlleleSymbolSlotAnnotation'
                 AND UPPER(sa.displaytext) IN :entity_name_list
                 AND ot.curie = :taxon
-                """)
-            elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
-                sql_query = text("""
+                """
+                )
+            elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
+                sql_query = text(
+                    """
                 SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleagm_id
@@ -1081,18 +1067,22 @@ class DatabaseMethods:
                 )
                 AND UPPER(sa.displaytext) IN :entity_name_list
                 AND ot.curie = :taxon
-                """)
-            elif 'targeting reagent' in entity_type:
-                sql_query = text("""
+                """
+                )
+            elif "targeting reagent" in entity_type:
+                sql_query = text(
+                    """
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, str.name
                 FROM biologicalentity be
                 JOIN sequencetargetingreagent str ON be.id = str.id
                 JOIN ontologyterm ot ON be.taxon_id = ot.id
                 WHERE UPPER(str.name) IN :entity_name_list
                 AND ot.curie = :taxon
-                """)
-            elif entity_type == 'construct':
-                sql_query = text("""
+                """
+                )
+            elif entity_type == "construct":
+                sql_query = text(
+                    """
                 SELECT DISTINCT r.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM reagent r
                 JOIN slotannotation sa ON r.id = sa.singleconstruct_id
@@ -1101,16 +1091,16 @@ class DatabaseMethods:
                     'ConstructSymbolSlotAnnotation'
                 )
                 AND UPPER(sa.displaytext) IN :entity_name_list
-                """)
-                rows = session.execute(sql_query, {'entity_name_list': tuple(entity_names_upper)}).fetchall()
+                """
+                )
+                rows = session.execute(sql_query, {"entity_name_list": tuple(entity_names_upper)}).fetchall()
                 return [{"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2]} for row in rows]
             else:
                 raise AGRAPIError(f"Unknown entity_type '{entity_type}'")
 
-            rows = session.execute(sql_query, {
-                'entity_name_list': tuple(entity_names_upper),
-                'taxon': taxon_curie
-            }).fetchall()
+            rows = session.execute(
+                sql_query, {"entity_name_list": tuple(entity_names_upper), "taxon": taxon_curie}
+            ).fetchall()
 
             return [{"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2]} for row in rows]
 
@@ -1119,15 +1109,10 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def search_entities_fuzzy(
-        self,
-        entity_type: str,
-        search_pattern: str,
-        taxon_curie: str,
-        include_synonyms: bool = True,
-        limit: int = 20
+    def search_entities(
+        self, entity_type: str, search_pattern: str, taxon_curie: str, include_synonyms: bool = True, limit: int = 20
     ) -> List[Dict[str, Any]]:
-        """Search entities with fuzzy/partial matching and synonym support.
+        """Search entities with partial matching and synonym support.
 
         This method enables flexible searching where partial matches are supported
         (e.g., "rut" will find "rutabaga"). Results are ordered by relevance:
@@ -1150,7 +1135,7 @@ class DatabaseMethods:
 
         Example:
             # Find Drosophila genes matching "rut"
-            results = db.search_entities_fuzzy(
+            results = db.search_entities(
                 'gene', 'rut', 'NCBITaxon:7227'
             )
             # Returns: rutabaga gene (FB:FBgn0003301) with synonym matches
@@ -1188,30 +1173,24 @@ class DatabaseMethods:
             search_upper = search_pattern.upper()
 
             # Build SlotAnnotation types list based on entity type
-            if entity_type == 'gene':
+            if entity_type == "gene":
                 annotation_types = [
                     "'GeneSymbolSlotAnnotation'",
                     "'GeneSystematicNameSlotAnnotation'",
-                    "'GeneFullNameSlotAnnotation'"
+                    "'GeneFullNameSlotAnnotation'",
                 ]
                 if include_synonyms:
                     annotation_types.append("'GeneSynonymSlotAnnotation'")
-            elif entity_type == 'allele':
+            elif entity_type == "allele":
                 annotation_types = ["'AlleleSymbolSlotAnnotation'"]
                 if include_synonyms:
-                    annotation_types.extend([
-                        "'AlleleFullNameSlotAnnotation'",
-                        "'AlleleSynonymSlotAnnotation'"
-                    ])
-            elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
-                annotation_types = [
-                    "'AgmFullNameSlotAnnotation'",
-                    "'AgmSecondaryIdSlotAnnotation'"
-                ]
+                    annotation_types.extend(["'AlleleFullNameSlotAnnotation'", "'AlleleSynonymSlotAnnotation'"])
+            elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
+                annotation_types = ["'AgmFullNameSlotAnnotation'", "'AgmSecondaryIdSlotAnnotation'"]
                 if include_synonyms:
                     annotation_types.append("'AgmSynonymSlotAnnotation'")
             else:
-                raise AGRAPIError(f"Unsupported entity_type for fuzzy search: '{entity_type}'")
+                raise AGRAPIError(f"Unsupported entity_type for search: '{entity_type}'")
 
             annotation_types_str = ", ".join(annotation_types)
             results = []
@@ -1227,11 +1206,10 @@ class DatabaseMethods:
                 return results[:limit]
 
             # Tier 2: Try prefix match (fast - uses B-tree index)
-            exclude_curies = {r['entity_curie'] for r in results}
+            exclude_curies = {r["entity_curie"] for r in results}
             remaining_limit = limit - len(results)
             prefix_results = self._search_prefix_match(
-                session, entity_type, search_upper, taxon_curie,
-                annotation_types_str, exclude_curies, remaining_limit
+                session, entity_type, search_upper, taxon_curie, annotation_types_str, exclude_curies, remaining_limit
             )
             results.extend(prefix_results)
 
@@ -1240,11 +1218,10 @@ class DatabaseMethods:
                 return results[:limit]
 
             # Tier 3: Fall back to contains match (slow - sequential scan)
-            exclude_curies = {r['entity_curie'] for r in results}
+            exclude_curies = {r["entity_curie"] for r in results}
             remaining_limit = limit - len(results)
             contains_results = self._search_contains_match(
-                session, entity_type, search_upper, taxon_curie,
-                annotation_types_str, exclude_curies, remaining_limit
+                session, entity_type, search_upper, taxon_curie, annotation_types_str, exclude_curies, remaining_limit
             )
             results.extend(contains_results)
 
@@ -1256,12 +1233,7 @@ class DatabaseMethods:
             session.close()
 
     def _search_exact_match(
-        self,
-        session: Session,
-        entity_type: str,
-        search_upper: str,
-        taxon_curie: str,
-        annotation_types_str: str
+        self, session: Session, entity_type: str, search_upper: str, taxon_curie: str, annotation_types_str: str
     ) -> List[Dict[str, Any]]:
         """Tier 1: Exact match search using B-tree index.
 
@@ -1283,25 +1255,26 @@ class DatabaseMethods:
                 - match_type: Always 'exact'
                 - relevance: Always 1
         """
-        if entity_type == 'gene':
-            entity_id_field = 'singlegene_id'
-            entity_table = 'gene g'
-            join_condition = 'g.id = sa.singlegene_id'
-            entity_alias = 'g'
-        elif entity_type == 'allele':
-            entity_id_field = 'singleallele_id'
-            entity_table = 'allele a'
-            join_condition = 'a.id = sa.singleallele_id'
-            entity_alias = 'a'
-        elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
-            entity_id_field = 'singleagm_id'
-            entity_table = 'affectedgenomicmodel agm'
-            join_condition = 'agm.id = sa.singleagm_id'
-            entity_alias = 'agm'
+        if entity_type == "gene":
+            entity_id_field = "singlegene_id"
+            entity_table = "gene g"
+            join_condition = "g.id = sa.singlegene_id"
+            entity_alias = "g"
+        elif entity_type == "allele":
+            entity_id_field = "singleallele_id"
+            entity_table = "allele a"
+            join_condition = "a.id = sa.singleallele_id"
+            entity_alias = "a"
+        elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
+            entity_id_field = "singleagm_id"
+            entity_table = "affectedgenomicmodel agm"
+            join_condition = "agm.id = sa.singleagm_id"
+            entity_alias = "agm"
         else:
             return []
 
-        sql_query = text(f"""
+        sql_query = text(
+            f"""
             SELECT DISTINCT ON (be.primaryexternalid)
                 be.primaryexternalid,
                 sa.obsolete,
@@ -1318,20 +1291,15 @@ class DatabaseMethods:
             AND sa.{entity_id_field} IS NOT NULL
             AND ot.curie = :taxon
             ORDER BY be.primaryexternalid, sa.displaytext
-        """)
+        """
+        )
 
-        rows = session.execute(sql_query, {
-            'search_exact': search_upper,
-            'taxon': taxon_curie
-        }).fetchall()
+        rows = session.execute(sql_query, {"search_exact": search_upper, "taxon": taxon_curie}).fetchall()
 
-        return [{
-            "entity_curie": row[0],
-            "is_obsolete": row[1],
-            "entity": row[2],
-            "match_type": row[3],
-            "relevance": row[4]
-        } for row in rows]
+        return [
+            {"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2], "match_type": row[3], "relevance": row[4]}
+            for row in rows
+        ]
 
     def _search_prefix_match(
         self,
@@ -1341,7 +1309,7 @@ class DatabaseMethods:
         taxon_curie: str,
         annotation_types_str: str,
         exclude_curies: Set[str],
-        limit: int
+        limit: int,
     ) -> List[Dict[str, Any]]:
         """Tier 2: Prefix match search using B-tree index.
 
@@ -1365,21 +1333,21 @@ class DatabaseMethods:
                 - match_type: Always 'starts_with'
                 - relevance: Always 2
         """
-        if entity_type == 'gene':
-            entity_id_field = 'singlegene_id'
-            entity_table = 'gene g'
-            join_condition = 'g.id = sa.singlegene_id'
-            entity_alias = 'g'
-        elif entity_type == 'allele':
-            entity_id_field = 'singleallele_id'
-            entity_table = 'allele a'
-            join_condition = 'a.id = sa.singleallele_id'
-            entity_alias = 'a'
-        elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
-            entity_id_field = 'singleagm_id'
-            entity_table = 'affectedgenomicmodel agm'
-            join_condition = 'agm.id = sa.singleagm_id'
-            entity_alias = 'agm'
+        if entity_type == "gene":
+            entity_id_field = "singlegene_id"
+            entity_table = "gene g"
+            join_condition = "g.id = sa.singlegene_id"
+            entity_alias = "g"
+        elif entity_type == "allele":
+            entity_id_field = "singleallele_id"
+            entity_table = "allele a"
+            join_condition = "a.id = sa.singleallele_id"
+            entity_alias = "a"
+        elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
+            entity_id_field = "singleagm_id"
+            entity_table = "affectedgenomicmodel agm"
+            join_condition = "agm.id = sa.singleagm_id"
+            entity_alias = "agm"
         else:
             return []
 
@@ -1389,7 +1357,8 @@ class DatabaseMethods:
         else:
             exclude_clause = ""
 
-        sql_query = text(f"""
+        sql_query = text(
+            f"""
             SELECT DISTINCT ON (be.primaryexternalid)
                 be.primaryexternalid,
                 sa.obsolete,
@@ -1409,26 +1378,24 @@ class DatabaseMethods:
             {exclude_clause}
             ORDER BY be.primaryexternalid, sa.displaytext
             LIMIT :limit
-        """)
+        """
+        )
 
         params = {
-            'search_starts': f'{search_upper}%',
-            'search_exact': search_upper,
-            'taxon': taxon_curie,
-            'limit': limit
+            "search_starts": f"{search_upper}%",
+            "search_exact": search_upper,
+            "taxon": taxon_curie,
+            "limit": limit,
         }
         if exclude_curies:
-            params['exclude_curies'] = tuple(exclude_curies)
+            params["exclude_curies"] = tuple(exclude_curies)
 
         rows = session.execute(sql_query, params).fetchall()
 
-        return [{
-            "entity_curie": row[0],
-            "is_obsolete": row[1],
-            "entity": row[2],
-            "match_type": row[3],
-            "relevance": row[4]
-        } for row in rows]
+        return [
+            {"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2], "match_type": row[3], "relevance": row[4]}
+            for row in rows
+        ]
 
     def _search_contains_match(
         self,
@@ -1438,7 +1405,7 @@ class DatabaseMethods:
         taxon_curie: str,
         annotation_types_str: str,
         exclude_curies: Set[str],
-        limit: int
+        limit: int,
     ) -> List[Dict[str, Any]]:
         """Tier 3: Contains match search using MATERIALIZED CTE.
 
@@ -1462,18 +1429,18 @@ class DatabaseMethods:
                 - match_type: Always 'contains'
                 - relevance: Always 3
         """
-        if entity_type == 'gene':
-            entity_id_field = 'singlegene_id'
-            entity_table = 'gene'
-            entity_alias = 'g'
-        elif entity_type == 'allele':
-            entity_id_field = 'singleallele_id'
-            entity_table = 'allele'
-            entity_alias = 'a'
-        elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
-            entity_id_field = 'singleagm_id'
-            entity_table = 'affectedgenomicmodel'
-            entity_alias = 'agm'
+        if entity_type == "gene":
+            entity_id_field = "singlegene_id"
+            entity_table = "gene"
+            entity_alias = "g"
+        elif entity_type == "allele":
+            entity_id_field = "singleallele_id"
+            entity_table = "allele"
+            entity_alias = "a"
+        elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
+            entity_id_field = "singleagm_id"
+            entity_table = "affectedgenomicmodel"
+            entity_alias = "agm"
         else:
             return []
 
@@ -1484,7 +1451,8 @@ class DatabaseMethods:
             exclude_clause = ""
 
         # Use MATERIALIZED CTE to force displaytext lookup first
-        sql_query = text(f"""
+        sql_query = text(
+            f"""
             WITH matching_slots AS MATERIALIZED (
                 SELECT
                     sa.{entity_id_field},
@@ -1511,32 +1479,837 @@ class DatabaseMethods:
             {exclude_clause}
             ORDER BY be.primaryexternalid, ms.displaytext
             LIMIT :limit
-        """)
+        """
+        )
 
         params = {
-            'search_contains': f'%{search_upper}%',
-            'search_starts': f'{search_upper}%',
-            'taxon': taxon_curie,
-            'limit': limit
+            "search_contains": f"%{search_upper}%",
+            "search_starts": f"{search_upper}%",
+            "taxon": taxon_curie,
+            "limit": limit,
         }
         if exclude_curies:
-            params['exclude_curies'] = tuple(exclude_curies)
+            params["exclude_curies"] = tuple(exclude_curies)
 
         rows = session.execute(sql_query, params).fetchall()
 
-        return [{
-            "entity_curie": row[0],
-            "is_obsolete": row[1],
-            "entity": row[2],
-            "match_type": row[3],
-            "relevance": row[4]
-        } for row in rows]
+        return [
+            {"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2], "match_type": row[3], "relevance": row[4]}
+            for row in rows
+        ]
 
-    def map_entity_curies_to_info(
+    def get_ontology_term(self, curie: str) -> Optional["OntologyTermResult"]:
+        """Get a specific ontology term by CURIE from the database.
+
+        This performs a direct lookup by CURIE with synonym aggregation.
+
+        Args:
+            curie: Ontology term CURIE (e.g., 'WBbt:0005062', 'GO:0005634')
+
+        Returns:
+            OntologyTermResult object with term details and synonyms, or None if not found
+
+        Example:
+            term = db.get_ontology_term('WBbt:0005062')
+            if term:
+                print(f"Name: {term.name}")
+                print(f"Synonyms: {', '.join(term.synonyms)}")
+        """
+
+        session = self._create_session()
+        try:
+            sql_query = text(
+                """
+            SELECT
+                ot.curie,
+                ot.name,
+                ot.namespace,
+                ot.definition,
+                ot.ontologytermtype,
+                ARRAY_AGG(DISTINCT ots.name) FILTER (WHERE ots.name IS NOT NULL) as synonyms
+            FROM
+                ontologyterm ot
+                LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+            WHERE
+                ot.curie = :curie
+            AND
+                ot.obsolete = false
+            GROUP BY
+                ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
+            """
+            )
+
+            row = session.execute(sql_query, {"curie": curie}).fetchone()
+
+            if row is None:
+                return None
+
+            return OntologyTermResult(
+                curie=row[0],
+                name=row[1],
+                namespace=row[2] or "",
+                definition=row[3],
+                ontology_type=row[4],
+                synonyms=row[5] or [],
+            )
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for ontology term {curie}: {str(e)}")
+        finally:
+            session.close()
+
+    def search_ontology_terms(
+        self, term: str, ontology_type: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search ontology terms with partial matching and synonym support.
+
+        This method enables flexible searching where partial matches are supported
+        (e.g., "linker" will find "linker cell"). Results are ordered by relevance:
+        exact match > starts with > contains.
+
+        Args:
+            term: Search term (e.g., 'linker cell', 'L3 larval stage')
+            ontology_type: Ontology term type (e.g., 'WBBTTerm', 'GOTerm', 'WBLSTerm')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Find C. elegans anatomy terms matching "linker"
+            results = db.search_ontology_terms('linker', 'WBBTTerm')
+
+        Notes:
+            - Case-insensitive search
+            - Searches term names and synonyms (if enabled)
+            - Performance: Uses tiered search strategy (exact → prefix → contains)
+                - Tier 1 (Exact): UPPER(name) = 'PATTERN' (uses B-tree index, 5-20ms)
+                - Tier 2 (Prefix): UPPER(name) LIKE 'PATTERN%' (uses B-tree index, 5-20ms)
+                - Tier 3 (Contains): UPPER(name) LIKE '%PATTERN%' (sequential scan, ~990ms)
+            - Most queries hit Tier 1 or 2 (5-10x faster on average)
+            - Tier 3 fallback ensures comprehensive results
+
+            TODO - Future Enhancements:
+            - Phase 2 optimization: Add pg_trgm extension for 50-100x improvement (all queries 10-30ms)
+        """
+
+        if not term:
+            return []
+
+        session = self._create_session()
+        try:
+            search_upper = term.upper()
+            results = []
+
+            # If exact_match is True, only do Tier 1
+            if exact_match:
+                exact_results = self._search_ontology_exact(session, search_upper, ontology_type, include_synonyms)
+                results.extend(exact_results)
+            else:
+                # Tier 1: Try exact match first (fast - uses B-tree index)
+                exact_results = self._search_ontology_exact(session, search_upper, ontology_type, include_synonyms)
+                results.extend(exact_results)
+
+                # If we have enough results, return early
+                if len(results) >= limit:
+                    return results[:limit]
+
+                # Tier 2: Try prefix match (fast - uses B-tree index)
+                exclude_curies = {r.curie for r in results}
+                remaining_limit = limit - len(results)
+                prefix_results = self._search_ontology_prefix(
+                    session, search_upper, ontology_type, include_synonyms, exclude_curies, remaining_limit
+                )
+                results.extend(prefix_results)
+
+                # If we have enough results, return early
+                if len(results) >= limit:
+                    return results[:limit]
+
+                # Tier 3: Fall back to contains match (slow - sequential scan)
+                exclude_curies = {r.curie for r in results}
+                remaining_limit = limit - len(results)
+                contains_results = self._search_ontology_contains(
+                    session, search_upper, ontology_type, include_synonyms, exclude_curies, remaining_limit
+                )
+                results.extend(contains_results)
+
+            return results[:limit]
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def _search_ontology_exact(
+        self, session: Session, search_upper: str, ontology_type: str, include_synonyms: bool
+    ) -> List["OntologyTermResult"]:
+        """Tier 1: Exact match search for ontology terms using B-tree index.
+
+        Uses UPPER(name) = 'PATTERN' which can use the functional B-tree index.
+        Expected performance: 5-20ms
+
+        Args:
+            session: SQLAlchemy session
+            search_upper: Uppercase search pattern
+            ontology_type: Ontology term type (e.g., 'WBBTTerm')
+            include_synonyms: Whether to include synonym matches
+
+        Returns:
+            List of OntologyTermResult objects
+        """
+
+        if include_synonyms:
+            sql_query = text(
+                """
+                WITH matching_terms AS (
+                    SELECT DISTINCT ot.id, ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
+                    FROM ontologyterm ot
+                    LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                    LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                    WHERE ot.ontologytermtype = :ontology_type
+                    AND ot.obsolete = false
+                    AND (UPPER(ot.name) = :search_exact OR UPPER(s.name) = :search_exact)
+                )
+                SELECT
+                    mt.curie,
+                    mt.name,
+                    mt.namespace,
+                    mt.definition,
+                    mt.ontologytermtype,
+                    ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
+                FROM matching_terms mt
+                LEFT JOIN ontologyterm_synonym ots ON mt.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
+                ORDER BY mt.name
+            """
+            )
+        else:
+            sql_query = text(
+                """
+                SELECT
+                    ot.curie,
+                    ot.name,
+                    ot.namespace,
+                    ot.definition,
+                    ot.ontologytermtype,
+                    ARRAY[]::text[] as synonyms
+                FROM ontologyterm ot
+                WHERE ot.ontologytermtype = :ontology_type
+                AND ot.obsolete = false
+                AND UPPER(ot.name) = :search_exact
+                ORDER BY ot.name
+            """
+            )
+
+        rows = session.execute(sql_query, {"search_exact": search_upper, "ontology_type": ontology_type}).fetchall()
+
+        return [
+            OntologyTermResult(
+                curie=row[0],
+                name=row[1],
+                namespace=row[2] or "",
+                definition=row[3],
+                ontology_type=row[4],
+                synonyms=row[5] or [],
+            )
+            for row in rows
+        ]
+
+    def _search_ontology_prefix(
         self,
-        entity_type: str,
-        entity_curies: List[str]
-    ) -> List[Dict[str, Any]]:
+        session: Session,
+        search_upper: str,
+        ontology_type: str,
+        include_synonyms: bool,
+        exclude_curies: Set[str],
+        limit: int,
+    ) -> List["OntologyTermResult"]:
+        """Tier 2: Prefix match search for ontology terms using B-tree index.
+
+        Uses UPPER(name) LIKE 'PATTERN%' which can use the functional B-tree index.
+        Expected performance: 5-20ms
+
+        Args:
+            session: SQLAlchemy session
+            search_upper: Uppercase search pattern
+            ontology_type: Ontology term type
+            include_synonyms: Whether to include synonym matches
+            exclude_curies: Set of CURIEs to exclude (from exact matches)
+            limit: Maximum results to return
+
+        Returns:
+            List of OntologyTermResult objects
+        """
+
+        # Build exclusion clause
+        if exclude_curies:
+            exclude_clause = "AND ot.curie NOT IN :exclude_curies"
+        else:
+            exclude_clause = ""
+
+        if include_synonyms:
+            sql_query = text(
+                f"""
+                WITH matching_terms AS (
+                    SELECT DISTINCT ot.id, ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
+                    FROM ontologyterm ot
+                    LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                    LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                    WHERE ot.ontologytermtype = :ontology_type
+                    AND ot.obsolete = false
+                    AND (UPPER(ot.name) LIKE :search_starts OR UPPER(s.name) LIKE :search_starts)
+                    AND (UPPER(ot.name) != :search_exact AND (s.name IS NULL OR UPPER(s.name) != :search_exact))
+                    {exclude_clause}
+                    LIMIT :limit
+                )
+                SELECT
+                    mt.curie,
+                    mt.name,
+                    mt.namespace,
+                    mt.definition,
+                    mt.ontologytermtype,
+                    ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
+                FROM matching_terms mt
+                LEFT JOIN ontologyterm_synonym ots ON mt.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
+                ORDER BY mt.name
+            """
+            )
+        else:
+            sql_query = text(
+                f"""
+                SELECT
+                    ot.curie,
+                    ot.name,
+                    ot.namespace,
+                    ot.definition,
+                    ot.ontologytermtype,
+                    ARRAY[]::text[] as synonyms
+                FROM ontologyterm ot
+                WHERE ot.ontologytermtype = :ontology_type
+                AND ot.obsolete = false
+                AND UPPER(ot.name) LIKE :search_starts
+                AND UPPER(ot.name) != :search_exact
+                {exclude_clause}
+                ORDER BY ot.name
+                LIMIT :limit
+            """
+            )
+
+        params = {
+            "search_starts": f"{search_upper}%",
+            "search_exact": search_upper,
+            "ontology_type": ontology_type,
+            "limit": limit,
+        }
+        if exclude_curies:
+            params["exclude_curies"] = tuple(exclude_curies)
+
+        rows = session.execute(sql_query, params).fetchall()
+
+        return [
+            OntologyTermResult(
+                curie=row[0],
+                name=row[1],
+                namespace=row[2] or "",
+                definition=row[3],
+                ontology_type=row[4],
+                synonyms=row[5] or [],
+            )
+            for row in rows
+        ]
+
+    def _search_ontology_contains(
+        self,
+        session: Session,
+        search_upper: str,
+        ontology_type: str,
+        include_synonyms: bool,
+        exclude_curies: Set[str],
+        limit: int,
+    ) -> List["OntologyTermResult"]:
+        """Tier 3: Contains match search for ontology terms.
+
+        Uses UPPER(name) LIKE '%PATTERN%' which CANNOT use B-tree index.
+        Requires sequential scan. Expected performance: ~990ms
+
+        Args:
+            session: SQLAlchemy session
+            search_upper: Uppercase search pattern
+            ontology_type: Ontology term type
+            include_synonyms: Whether to include synonym matches
+            exclude_curies: Set of CURIEs to exclude (from exact/prefix matches)
+            limit: Maximum results to return
+
+        Returns:
+            List of OntologyTermResult objects
+        """
+
+        if include_synonyms:
+            # Build exclusion clause for CTE query (use mt.curie since we're in the outer query)
+            if exclude_curies:
+                exclude_clause = "AND mt.curie NOT IN :exclude_curies"
+            else:
+                exclude_clause = ""
+
+            sql_query = text(
+                f"""
+                WITH matching_terms AS MATERIALIZED (
+                    SELECT DISTINCT
+                        ot.id,
+                        ot.curie,
+                        ot.name,
+                        ot.namespace,
+                        ot.definition,
+                        ot.ontologytermtype
+                    FROM ontologyterm ot
+                    LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                    LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                    WHERE ot.ontologytermtype = :ontology_type
+                    AND ot.obsolete = false
+                    AND (UPPER(ot.name) LIKE :search_contains OR UPPER(s.name) LIKE :search_contains)
+                    AND (UPPER(ot.name) NOT LIKE :search_starts AND (s.name IS NULL OR UPPER(s.name) NOT LIKE :search_starts))
+                )
+                SELECT
+                    mt.curie,
+                    mt.name,
+                    mt.namespace,
+                    mt.definition,
+                    mt.ontologytermtype,
+                    ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
+                FROM matching_terms mt
+                LEFT JOIN ontologyterm_synonym ots ON mt.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                WHERE true
+                {exclude_clause}
+                GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
+                ORDER BY mt.name
+                LIMIT :limit
+            """
+            )
+        else:
+            # Build exclusion clause for direct query (use ot.curie since no CTE)
+            if exclude_curies:
+                exclude_clause = "AND ot.curie NOT IN :exclude_curies"
+            else:
+                exclude_clause = ""
+
+            sql_query = text(
+                f"""
+                SELECT
+                    ot.curie,
+                    ot.name,
+                    ot.namespace,
+                    ot.definition,
+                    ot.ontologytermtype,
+                    ARRAY[]::text[] as synonyms
+                FROM ontologyterm ot
+                WHERE ot.ontologytermtype = :ontology_type
+                AND ot.obsolete = false
+                AND UPPER(ot.name) LIKE :search_contains
+                AND UPPER(ot.name) NOT LIKE :search_starts
+                {exclude_clause}
+                ORDER BY ot.name
+                LIMIT :limit
+            """
+            )
+
+        params = {
+            "search_contains": f"%{search_upper}%",
+            "search_starts": f"{search_upper}%",
+            "ontology_type": ontology_type,
+            "limit": limit,
+        }
+        if exclude_curies:
+            params["exclude_curies"] = tuple(exclude_curies)
+
+        rows = session.execute(sql_query, params).fetchall()
+
+        return [
+            OntologyTermResult(
+                curie=row[0],
+                name=row[1],
+                namespace=row[2] or "",
+                definition=row[3],
+                ontology_type=row[4],
+                synonyms=row[5] or [],
+            )
+            for row in rows
+        ]
+
+    def search_anatomy_terms(
+        self, term: str, data_provider: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search anatomy ontology terms with organism-aware type mapping.
+
+        Convenience wrapper that automatically maps data_provider to the correct
+        anatomy ontology type (WBBTTerm for WB, UBERONTerm for FB, etc.).
+
+        Args:
+            term: Search term (e.g., 'linker cell', 'pharynx')
+            data_provider: Data provider code ('WB', 'FB', 'ZFIN', 'MGI', 'RGD', 'SGD', 'XB')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Find C. elegans anatomy terms matching "linker"
+            results = db.search_anatomy_terms('linker', 'WB')
+            # Returns: [OntologyTermResult(curie='WBbt:0005062', name='linker cell', ...)]
+
+        Raises:
+            AGRAPIError: If data_provider is not supported
+        """
+        # Map data_provider to anatomy ontology type
+        provider_to_anatomy_type = {
+            "WB": "WBBTTerm",  # C. elegans - WormBase Anatomy
+            "FB": "UBERONTerm",  # D. melanogaster - Uberon (cross-species anatomy)
+            "ZFIN": "ZFATerm",  # D. rerio (zebrafish) - ZFIN Anatomy
+            "MGI": "EMAPATerm",  # M. musculus (mouse) - Mouse Anatomy (embryonic)
+            "RGD": "UBERONTerm",  # R. norvegicus (rat) - Uberon (cross-species)
+            "SGD": "UBERONTerm",  # S. cerevisiae (yeast) - Uberon (cross-species)
+            "XB": "XBATerm",  # X. laevis (xenopus) - Xenbase Anatomy (FIXED TYPO)
+        }
+
+        # Additional anatomy ontology support (can be accessed directly)
+        # MATerm - Mouse Adult Anatomy
+        # BTOTerm - BRENDA Tissue Ontology
+        # CLTerm - Cell Ontology
+        # XBEDTerm - Xenopus Embryonic Development
+
+        ontology_type = provider_to_anatomy_type.get(data_provider.upper())
+        if not ontology_type:
+            raise AGRAPIError(
+                f"Unsupported data_provider for anatomy search: '{data_provider}'. "
+                f"Supported: {', '.join(provider_to_anatomy_type.keys())}"
+            )
+
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type=ontology_type,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_life_stage_terms(
+        self, term: str, data_provider: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search life stage ontology terms with organism-aware type mapping.
+
+        Convenience wrapper that automatically maps data_provider to the correct
+        life stage ontology type (WBLSTerm for WB, FBDVTerm for FB, etc.).
+
+        Args:
+            term: Search term (e.g., 'L3 larval stage', 'adult')
+            data_provider: Data provider code ('WB', 'FB', 'ZFIN', 'MGI', 'XB')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Find C. elegans life stages matching "L3"
+            results = db.search_life_stage_terms('L3', 'WB')
+            # Returns: [OntologyTermResult(curie='WBls:0000035', name='L3 larval stage', ...)]
+
+        Raises:
+            AGRAPIError: If data_provider is not supported
+        """
+        # Map data_provider to life stage ontology type
+        provider_to_stage_type = {
+            "WB": "WBLSTerm",  # C. elegans - WormBase Life Stage
+            "FB": "FBDVTerm",  # D. melanogaster - FlyBase Development
+            "ZFIN": "ZFSTerm",  # D. rerio (zebrafish) - ZFIN Stages
+            "MGI": "MMUSDVTerm",  # M. musculus (mouse) - Mouse Developmental Stages (FIXED CASING)
+            "XB": "XBSTerm",  # X. laevis (xenopus) - Xenbase Stages
+        }
+
+        # Additional life stage ontology support (can be accessed directly)
+        # XBEDTerm - Xenopus Embryonic Development
+
+        ontology_type = provider_to_stage_type.get(data_provider.upper())
+        if not ontology_type:
+            raise AGRAPIError(
+                f"Unsupported data_provider for life stage search: '{data_provider}'. "
+                f"Supported: {', '.join(provider_to_stage_type.keys())}"
+            )
+
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type=ontology_type,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_go_terms(
+        self,
+        term: str,
+        go_aspect: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20,
+    ) -> List["OntologyTermResult"]:
+        """Search Gene Ontology terms with optional aspect filtering.
+
+        Args:
+            term: Search term (e.g., 'nucleus', 'apoptosis')
+            go_aspect: Optional GO aspect to filter by:
+                - 'cellular_component' (e.g., nucleus, cytoplasm)
+                - 'biological_process' (e.g., apoptosis, cell division)
+                - 'molecular_function' (e.g., kinase activity, binding)
+                If None, searches all GO aspects (default)
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance,
+            filtered by namespace if go_aspect is specified
+
+        Example:
+            # Find cellular component GO terms matching "nucleus"
+            results = db.search_go_terms('nucleus', go_aspect='cellular_component')
+            # Returns: [OntologyTermResult(curie='GO:0005634', name='nucleus', ...)]
+
+        Notes:
+            - GO terms are organism-agnostic (same terms used across all species)
+            - If go_aspect is specified, results are filtered by namespace after search
+        """
+        # Search all GO terms
+        results = self.search_ontology_terms(
+            term=term,
+            ontology_type="GOTerm",
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit * 2 if go_aspect else limit,  # Get more results if we need to filter
+        )
+
+        # Filter by GO aspect if specified
+        if go_aspect:
+            aspect_to_namespace = {
+                "cellular_component": "cellular_component",
+                "biological_process": "biological_process",
+                "molecular_function": "molecular_function",
+            }
+
+            target_namespace = aspect_to_namespace.get(go_aspect.lower())
+            if not target_namespace:
+                raise AGRAPIError(
+                    f"Invalid go_aspect: '{go_aspect}'. " f"Valid options: {', '.join(aspect_to_namespace.keys())}"
+                )
+
+            results = [r for r in results if r.namespace == target_namespace]
+            results = results[:limit]  # Apply limit after filtering
+
+        return results
+
+    def search_disease_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search Disease Ontology (DO) terms.
+
+        Args:
+            term: Search term (e.g., 'diabetes', 'cancer')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_disease_terms('diabetes')
+            # Returns: [OntologyTermResult(curie='DOID:9351', name='diabetes mellitus', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term, ontology_type="DOTerm", exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
+
+    def search_phenotype_terms(
+        self,
+        term: str,
+        organism: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20,
+    ) -> List["OntologyTermResult"]:
+        """Search phenotype ontology terms with optional organism filtering.
+
+        Args:
+            term: Search term (e.g., 'lethality', 'sterile')
+            organism: Optional organism filter:
+                - 'human' or 'HP' → HPTerm (Human Phenotype)
+                - 'mouse' or 'MP' → MPTerm (Mammalian Phenotype)
+                - 'worm' or 'WB' → WBPhenotypeTerm (C. elegans)
+                If None, searches all phenotype types (default)
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            # Search human phenotypes
+            results = db.search_phenotype_terms('seizure', organism='human')
+            # Search all phenotype ontologies
+            results = db.search_phenotype_terms('lethality')
+        """
+        organism_to_phenotype_type = {
+            "human": "HPTerm",
+            "hp": "HPTerm",
+            "mouse": "MPTerm",
+            "mp": "MPTerm",
+            "worm": "WBPhenotypeTerm",
+            "wb": "WBPhenotypeTerm",
+        }
+
+        if organism:
+            ontology_type = organism_to_phenotype_type.get(organism.lower())
+            if not ontology_type:
+                raise AGRAPIError(
+                    f"Unsupported organism for phenotype search: '{organism}'. "
+                    f"Supported: {', '.join(set(organism_to_phenotype_type.values()))}"
+                )
+            return self.search_ontology_terms(
+                term=term,
+                ontology_type=ontology_type,
+                exact_match=exact_match,
+                include_synonyms=include_synonyms,
+                limit=limit,
+            )
+        else:
+            # Search all phenotype types and combine results
+            all_results = []
+            for onto_type in ["HPTerm", "MPTerm", "WBPhenotypeTerm"]:
+                results = self.search_ontology_terms(
+                    term=term,
+                    ontology_type=onto_type,
+                    exact_match=exact_match,
+                    include_synonyms=include_synonyms,
+                    limit=limit,
+                )
+                all_results.extend(results)
+
+            # Sort by relevance (exact matches first) and deduplicate
+            seen_curies = set()
+            unique_results = []
+            for result in all_results:
+                if result.curie not in seen_curies:
+                    seen_curies.add(result.curie)
+                    unique_results.append(result)
+
+            return unique_results[:limit]
+
+    def search_chemical_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search Chemical Entities of Biological Interest (ChEBI) terms.
+
+        Args:
+            term: Search term (e.g., 'glucose', 'dopamine', 'ethanol')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_chemical_terms('dopamine')
+            # Returns: [OntologyTermResult(curie='CHEBI:18243', name='dopamine', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type="CHEBITerm",
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_evidence_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search Evidence and Conclusion Ontology (ECO) terms.
+
+        Args:
+            term: Search term (e.g., 'experimental evidence', 'sequence similarity')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_evidence_terms('experimental')
+            # Returns evidence code terms from ECO
+        """
+        return self.search_ontology_terms(
+            term=term, ontology_type="ECOTerm", exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
+
+    def search_taxon_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search NCBI Taxonomy terms.
+
+        Args:
+            term: Search term (e.g., 'Caenorhabditis elegans', 'human', 'mouse')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_taxon_terms('elegans')
+            # Returns: [OntologyTermResult(curie='NCBITaxon:6239', name='Caenorhabditis elegans', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term,
+            ontology_type="NCBITaxonTerm",
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_sequence_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List["OntologyTermResult"]:
+        """Search Sequence Ontology (SO) terms.
+
+        Args:
+            term: Search term (e.g., 'exon', 'intron', 'promoter')
+            exact_match: If True, only return exact matches (default: False)
+            include_synonyms: Include synonym fields in search (default: True)
+            limit: Maximum number of results to return (default: 20)
+
+        Returns:
+            List of OntologyTermResult objects sorted by relevance
+
+        Example:
+            results = db.search_sequence_terms('exon')
+            # Returns: [OntologyTermResult(curie='SO:0000147', name='exon', ...)]
+        """
+        return self.search_ontology_terms(
+            term=term, ontology_type="SOTerm", exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
+
+    def map_entity_curies_to_info(self, entity_type: str, entity_curies: List[str]) -> List[Dict[str, Any]]:
         """Map entity CURIEs to their basic information.
 
         Args:
@@ -1557,39 +2330,47 @@ class DatabaseMethods:
             entity_type = entity_type.lower()
             entity_curies_upper = [curie.upper() for curie in entity_curies]
 
-            if entity_type in ['gene', 'allele']:
+            if entity_type in ["gene", "allele"]:
                 entity_table_name = entity_type
-                sql_query = text(f"""
+                sql_query = text(
+                    f"""
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
                 FROM biologicalentity be, {entity_table_name} ent_tbl
                 WHERE be.id = ent_tbl.id
                 AND UPPER(be.primaryexternalid) IN :entity_curie_list
-                """)
-            elif entity_type == 'construct':
-                sql_query = text("""
+                """
+                )
+            elif entity_type == "construct":
+                sql_query = text(
+                    """
                 SELECT DISTINCT r.primaryexternalid, r.obsolete, r.primaryexternalid
                 FROM reagent r, construct c
                 WHERE r.id = c.id
                 AND UPPER(r.primaryexternalid) IN :entity_curie_list
-                """)
-            elif entity_type in ['agm', 'agms', 'strain', 'genotype', 'fish']:
-                sql_query = text("""
+                """
+                )
+            elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
+                sql_query = text(
+                    """
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
                 FROM biologicalentity be, affectedgenomicmodel agm
                 WHERE be.id = agm.id
                 AND UPPER(be.primaryexternalid) IN :entity_curie_list
-                """)
-            elif 'targeting reagent' in entity_type:
-                sql_query = text("""
+                """
+                )
+            elif "targeting reagent" in entity_type:
+                sql_query = text(
+                    """
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
                 FROM biologicalentity be, sequencetargetingreagent str
                 WHERE be.id = str.id
                 AND UPPER(be.primaryexternalid) IN :entity_curie_list
-                """)
+                """
+                )
             else:
                 raise AGRAPIError(f"Unknown entity_type '{entity_type}'")
 
-            rows = session.execute(sql_query, {'entity_curie_list': tuple(entity_curies_upper)}).fetchall()
+            rows = session.execute(sql_query, {"entity_curie_list": tuple(entity_curies_upper)}).fetchall()
             return [{"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2]} for row in rows]
 
         except Exception as e:
@@ -1597,11 +2378,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def map_curies_to_names(
-        self,
-        category: str,
-        curies: List[str]
-    ) -> Dict[str, str]:
+    def map_curies_to_names(self, category: str, curies: List[str]) -> Dict[str, str]:
         """Map entity CURIEs to their display names.
 
         Args:
@@ -1622,52 +2399,62 @@ class DatabaseMethods:
         try:
             category = category.lower()
 
-            if category == 'gene':
-                sql_query = text("""
+            if category == "gene":
+                sql_query = text(
+                    """
                 SELECT be.primaryexternalid, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singlegene_id
                 WHERE be.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'GeneSymbolSlotAnnotation'
-                """)
-            elif 'allele' in category:
-                sql_query = text("""
+                """
+                )
+            elif "allele" in category:
+                sql_query = text(
+                    """
                 SELECT be.primaryexternalid, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleallele_id
                 WHERE be.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'AlleleSymbolSlotAnnotation'
-                """)
-            elif category in ['affected genome model', 'agm', 'strain', 'genotype', 'fish']:
-                sql_query = text("""
+                """
+                )
+            elif category in ["affected genome model", "agm", "strain", "genotype", "fish"]:
+                sql_query = text(
+                    """
                 SELECT DISTINCT be.primaryexternalid, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleagm_id
                 WHERE be.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'AgmFullNameSlotAnnotation'
-                """)
-            elif 'construct' in category:
-                sql_query = text("""
+                """
+                )
+            elif "construct" in category:
+                sql_query = text(
+                    """
                 SELECT r.primaryexternalid, sa.displaytext
                 FROM reagent r
                 JOIN slotannotation sa ON r.id = sa.singleconstruct_id
                 WHERE r.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'ConstructSymbolSlotAnnotation'
-                """)
-            elif category in ['species', 'ecoterm']:
+                """
+                )
+            elif category in ["species", "ecoterm"]:
                 curies_upper = [curie.upper() for curie in curies]
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT curie, name
                 FROM ontologyterm
                 WHERE UPPER(curie) IN :curies
-                """)
-                rows = session.execute(sql_query, {'curies': tuple(curies_upper)}).fetchall()
+                """
+                )
+                rows = session.execute(sql_query, {"curies": tuple(curies_upper)}).fetchall()
                 return {row[0]: row[1] for row in rows}
             else:
                 # Return identity mapping for unknown categories
                 return {curie: curie for curie in curies}
 
-            rows = session.execute(sql_query, {'curies': tuple(curies)}).fetchall()
+            rows = session.execute(sql_query, {"curies": tuple(curies)}).fetchall()
             return {row[0]: row[1] for row in rows}
 
         except Exception as e:
@@ -1677,10 +2464,7 @@ class DatabaseMethods:
 
     # ATP/Topic ontology methods (from agr_literature_service ateam_db_helpers.py)
     def search_atp_topics(
-        self,
-        topic: Optional[str] = None,
-        mod_abbr: Optional[str] = None,
-        limit: int = 10
+        self, topic: Optional[str] = None, mod_abbr: Optional[str] = None, limit: int = 10
     ) -> List[Dict[str, str]]:
         """Search ATP ontology for topics.
 
@@ -1699,7 +2483,8 @@ class DatabaseMethods:
         try:
             if topic and mod_abbr:
                 search_query = f"%{topic.upper()}%"
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT DISTINCT ot.curie, ot.name
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -1711,16 +2496,21 @@ class DatabaseMethods:
                 AND ancestor.curie = :topic_category_atp
                 AND s.subsets = :mod_abbr
                 LIMIT :limit
-                """)
-                rows = session.execute(sql_query, {
-                    'search_query': search_query,
-                    'topic_category_atp': TOPIC_CATEGORY_ATP,
-                    'mod_abbr': f'{mod_abbr}_tag',
-                    'limit': limit
-                }).fetchall()
+                """
+                )
+                rows = session.execute(
+                    sql_query,
+                    {
+                        "search_query": search_query,
+                        "topic_category_atp": TOPIC_CATEGORY_ATP,
+                        "mod_abbr": f"{mod_abbr}_tag",
+                        "limit": limit,
+                    },
+                ).fetchall()
             elif topic:
                 search_query = f"%{topic.upper()}%"
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT DISTINCT ot.curie, ot.name
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -1730,14 +2520,14 @@ class DatabaseMethods:
                 AND ot.obsolete = false
                 AND ancestor.curie = :topic_category_atp
                 LIMIT :limit
-                """)
-                rows = session.execute(sql_query, {
-                    'search_query': search_query,
-                    'topic_category_atp': TOPIC_CATEGORY_ATP,
-                    'limit': limit
-                }).fetchall()
+                """
+                )
+                rows = session.execute(
+                    sql_query, {"search_query": search_query, "topic_category_atp": TOPIC_CATEGORY_ATP, "limit": limit}
+                ).fetchall()
             elif mod_abbr:
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT DISTINCT ot.curie, ot.name
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -1746,11 +2536,11 @@ class DatabaseMethods:
                 WHERE ot.ontologytermtype = 'ATPTerm'
                 AND ancestor.curie = :topic_category_atp
                 AND s.subsets = :mod_abbr
-                """)
-                rows = session.execute(sql_query, {
-                    'topic_category_atp': TOPIC_CATEGORY_ATP,
-                    'mod_abbr': f'{mod_abbr}_tag'
-                }).fetchall()
+                """
+                )
+                rows = session.execute(
+                    sql_query, {"topic_category_atp": TOPIC_CATEGORY_ATP, "mod_abbr": f"{mod_abbr}_tag"}
+                ).fetchall()
             else:
                 return []
 
@@ -1761,10 +2551,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def get_atp_descendants(
-        self,
-        ancestor_curie: str
-    ) -> List[Dict[str, str]]:
+    def get_atp_descendants(self, ancestor_curie: str) -> List[Dict[str, str]]:
         """Get all descendants of an ATP ontology term.
 
         Args:
@@ -1778,7 +2565,8 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text("""
+            sql_query = text(
+                """
             SELECT DISTINCT ot.curie, ot.name
             FROM ontologyterm ot
             JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -1786,8 +2574,9 @@ class DatabaseMethods:
             WHERE ot.ontologytermtype = 'ATPTerm'
             AND ot.obsolete = false
             AND ancestor.curie = :ancestor_curie
-            """)
-            rows = session.execute(sql_query, {'ancestor_curie': ancestor_curie}).fetchall()
+            """
+            )
+            rows = session.execute(sql_query, {"ancestor_curie": ancestor_curie}).fetchall()
             return [{"curie": row[0], "name": row[1]} for row in rows]
 
         except Exception as e:
@@ -1795,11 +2584,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def get_ontology_ancestors_or_descendants(
-        self,
-        ontology_node: str,
-        direction: str = 'descendants'
-    ) -> List[str]:
+    def get_ontology_ancestors_or_descendants(self, ontology_node: str, direction: str = "descendants") -> List[str]:
         """Get ancestors or descendants of an ontology node.
 
         Args:
@@ -1814,26 +2599,30 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            if direction == 'descendants':
-                sql_query = text("""
+            if direction == "descendants":
+                sql_query = text(
+                    """
                 SELECT DISTINCT ot.curie
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
                 JOIN ontologyterm ancestor ON ancestor.id = otc.closureobject_id
                 WHERE ancestor.curie = :ontology_node
                 AND ot.obsolete = False
-                """)
+                """
+                )
             else:  # ancestors
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT DISTINCT ot.curie
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
                 JOIN ontologyterm descendant ON descendant.id = otc.closureobject_id
                 WHERE descendant.curie = :ontology_node
                 AND ot.obsolete = False
-                """)
+                """
+                )
 
-            rows = session.execute(sql_query, {'ontology_node': ontology_node}).fetchall()
+            rows = session.execute(sql_query, {"ontology_node": ontology_node}).fetchall()
             return [row[0] for row in rows]
 
         except Exception as e:
@@ -1842,11 +2631,7 @@ class DatabaseMethods:
             session.close()
 
     # Species search methods (from agr_literature_service ateam_db_helpers.py)
-    def search_species(
-        self,
-        species: str,
-        limit: int = 10
-    ) -> List[Dict[str, str]]:
+    def search_species(self, species: str, limit: int = 10) -> List[Dict[str, str]]:
         """Search for species by name or CURIE.
 
         Args:
@@ -1863,24 +2648,28 @@ class DatabaseMethods:
         try:
             if species.upper().startswith("NCBITAXON"):
                 search_query = f"{species.upper()}%"
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT curie, name
                 FROM ontologyterm
                 WHERE ontologytermtype = 'NCBITaxonTerm'
                 AND UPPER(curie) LIKE :search_query
                 LIMIT :limit
-                """)
+                """
+                )
             else:
                 search_query = f"%{species.upper()}%"
-                sql_query = text("""
+                sql_query = text(
+                    """
                 SELECT curie, name
                 FROM ontologyterm
                 WHERE ontologytermtype = 'NCBITaxonTerm'
                 AND UPPER(name) LIKE :search_query
                 LIMIT :limit
-                """)
+                """
+                )
 
-            rows = session.execute(sql_query, {'search_query': search_query, 'limit': limit}).fetchall()
+            rows = session.execute(sql_query, {"search_query": search_query, "limit": limit}).fetchall()
             return [{"curie": row[0], "name": row[1]} for row in rows]
 
         except Exception as e:

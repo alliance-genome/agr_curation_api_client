@@ -20,11 +20,7 @@ class TestGeneSymbolSlotAnnotation:
 
     def test_valid_gene_symbol(self):
         """Test valid gene symbol creation."""
-        data = {
-            "displayText": "Pax6",
-            "formatText": "Pax6",
-            "nameType": "nomenclature_symbol"
-        }
+        data = {"displayText": "Pax6", "formatText": "Pax6", "nameType": "nomenclature_symbol"}
 
         symbol = GeneSymbolSlotAnnotation(**data)
         assert symbol.display_text == "Pax6"
@@ -37,7 +33,7 @@ class TestGeneSymbolSlotAnnotation:
             "display_text": "Pax6",  # Using snake_case
             "format_text": "Pax6",
             "createdBy": "user123",
-            "dateCreated": "2024-01-15T10:30:00Z"
+            "dateCreated": "2024-01-15T10:30:00Z",
         }
 
         symbol = GeneSymbolSlotAnnotation(**data)
@@ -55,12 +51,7 @@ class TestNCBITaxonTerm:
 
     def test_valid_taxon(self):
         """Test valid taxon creation."""
-        data = {
-            "curie": "NCBITaxon:9606",
-            "name": "Homo sapiens",
-            "common_name": "human",
-            "abbreviation": "Hsa"
-        }
+        data = {"curie": "NCBITaxon:9606", "name": "Homo sapiens", "common_name": "human", "abbreviation": "Hsa"}
 
         taxon = NCBITaxonTerm(**data)
         assert taxon.curie == "NCBITaxon:9606"
@@ -81,7 +72,7 @@ class TestSOTerm:
         data = {
             "curie": "SO:0000704",
             "name": "gene",
-            "definition": "A region (or regions) that includes all of the sequence elements necessary to encode a functional transcript."
+            "definition": "A region (or regions) that includes all of the sequence elements necessary to encode a functional transcript.",
         }
 
         so_term = SOTerm(**data)
@@ -99,7 +90,7 @@ class TestCrossReference:
             "referencedCurie": "UniProtKB:P63330",
             "displayName": "Pax6 protein",
             "prefix": "UniProtKB",
-            "pageArea": "gene"
+            "pageArea": "gene",
         }
 
         cross_ref = CrossReference(**data)
@@ -118,15 +109,9 @@ class TestDataProvider:
 
     def test_valid_data_provider(self):
         """Test valid data provider creation."""
-        cross_ref_data = {
-            "referencedCurie": "WB:WBGene00000001",
-            "displayName": "Gene Page"
-        }
+        cross_ref_data = {"referencedCurie": "WB:WBGene00000001", "displayName": "Gene Page"}
 
-        data = {
-            "sourceOrganization": "WB",
-            "crossReference": cross_ref_data
-        }
+        data = {"sourceOrganization": "WB", "crossReference": cross_ref_data}
 
         provider = DataProvider(**data)
         assert provider.source_organization == "WB"
@@ -147,7 +132,7 @@ class TestLaboratory:
             "abbreviation": "Horvitz Lab",
             "name": "Robert Horvitz Laboratory",
             "piName": "H. Robert Horvitz",
-            "institution": "MIT"
+            "institution": "MIT",
         }
 
         lab = Laboratory(**data)
@@ -167,7 +152,7 @@ class TestGeneGenomicLocationAssociation:
             "end": 1005000,
             "strand": "+",
             "chromosome": "I",
-            "assembly": "WBcel235"
+            "assembly": "WBcel235",
         }
 
         location = GeneGenomicLocationAssociation(**data)
@@ -182,16 +167,9 @@ class TestNote:
 
     def test_valid_note(self):
         """Test valid note creation."""
-        note_type_data = {
-            "name": "automated_description",
-            "definition": "Automated gene description"
-        }
+        note_type_data = {"name": "automated_description", "definition": "Automated gene description"}
 
-        data = {
-            "noteType": note_type_data,
-            "freeText": "This gene encodes a transcription factor.",
-            "internal": False
-        }
+        data = {"noteType": note_type_data, "freeText": "This gene encodes a transcription factor.", "internal": False}
 
         note = Note(**data)
         assert note.free_text == "This gene encodes a transcription factor."
@@ -210,21 +188,11 @@ class TestModelIntegration:
     def test_nested_model_parsing(self):
         """Test that models can be nested properly."""
         # Create a complex nested structure
-        taxon_data = {
-            "curie": "NCBITaxon:6239",
-            "name": "Caenorhabditis elegans",
-            "abbreviation": "Cel"
-        }
+        taxon_data = {"curie": "NCBITaxon:6239", "name": "Caenorhabditis elegans", "abbreviation": "Cel"}
 
-        gene_type_data = {
-            "curie": "SO:0000704",
-            "name": "gene"
-        }
+        gene_type_data = {"curie": "SO:0000704", "name": "gene"}
 
-        symbol_data = {
-            "displayText": "unc-18",
-            "formatText": "unc-18"
-        }
+        symbol_data = {"displayText": "unc-18", "formatText": "unc-18"}
 
         # Test that these can be created independently
         taxon = NCBITaxonTerm(**taxon_data)
@@ -239,10 +207,7 @@ class TestModelIntegration:
     def test_dict_to_model_conversion(self):
         """Test conversion from dict to model objects."""
         # This simulates what happens in the field validators
-        dict_data = {
-            "curie": "NCBITaxon:9606",
-            "name": "Homo sapiens"
-        }
+        dict_data = {"curie": "NCBITaxon:9606", "name": "Homo sapiens"}
 
         # Direct model creation
         taxon = NCBITaxonTerm(**dict_data)
@@ -261,10 +226,6 @@ class TestModelIntegration:
         assert minimal_taxon.common_name is None
 
         # With optional fields
-        full_taxon = NCBITaxonTerm(
-            curie="NCBITaxon:9606",
-            name="Homo sapiens",
-            common_name="human"
-        )
+        full_taxon = NCBITaxonTerm(curie="NCBITaxon:9606", name="Homo sapiens", common_name="human")
         assert full_taxon.name == "Homo sapiens"
         assert full_taxon.common_name == "human"

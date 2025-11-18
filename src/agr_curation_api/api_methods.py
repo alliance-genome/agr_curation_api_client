@@ -52,7 +52,7 @@ class APIMethods:
         _apply_data_provider_filter: Optional[Callable[..., None]] = None,
         _apply_taxon_filter: Optional[Callable[..., None]] = None,
         _apply_date_sorting: Optional[Callable[..., None]] = None,
-        _filter_by_date: Optional[Callable[..., Any]] = None
+        _filter_by_date: Optional[Callable[..., Any]] = None,
     ) -> List[Gene]:
         """Get genes from REST API.
 
@@ -122,7 +122,7 @@ class APIMethods:
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
         _apply_date_sorting: Optional[Callable[..., None]] = None,
-        _filter_by_date: Optional[Callable[..., Any]] = None
+        _filter_by_date: Optional[Callable[..., Any]] = None,
     ) -> List[NCBITaxonTerm]:
         """Get species data from REST API using NCBITaxonTerm endpoint.
 
@@ -166,7 +166,7 @@ class APIMethods:
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
         _apply_date_sorting: Optional[Callable[..., None]] = None,
-        _filter_by_date: Optional[Callable[..., Any]] = None
+        _filter_by_date: Optional[Callable[..., Any]] = None,
     ) -> List[NCBITaxonTerm]:
         """Get NCBI Taxon terms from REST API.
 
@@ -187,7 +187,7 @@ class APIMethods:
             page=page,
             updated_after=updated_after,
             _apply_date_sorting=_apply_date_sorting,
-            _filter_by_date=_filter_by_date
+            _filter_by_date=_filter_by_date,
         )
 
     def get_ncbi_taxon_term(self, taxon_id: str) -> Optional[NCBITaxonTerm]:
@@ -260,7 +260,7 @@ class APIMethods:
         updated_after: Optional[Union[str, datetime]] = None,
         _apply_data_provider_filter: Optional[Callable[..., None]] = None,
         _apply_date_sorting: Optional[Callable[..., None]] = None,
-        _filter_by_date: Optional[Callable[..., Any]] = None
+        _filter_by_date: Optional[Callable[..., Any]] = None,
     ) -> List[ExpressionAnnotation]:
         """Get expression annotations from REST API.
 
@@ -279,9 +279,7 @@ class APIMethods:
         req_data: Dict[str, Any] = {}
         if _apply_data_provider_filter:
             _apply_data_provider_filter(
-                req_data,
-                data_provider,
-                "expressionAnnotationSubject.dataProvider.abbreviation"
+                req_data, data_provider, "expressionAnnotationSubject.dataProvider.abbreviation"
             )
         if _apply_date_sorting:
             _apply_date_sorting(req_data, updated_after)
@@ -314,7 +312,7 @@ class APIMethods:
         transgenes_only: bool = False,
         _apply_data_provider_filter: Optional[Callable[..., None]] = None,
         _apply_date_sorting: Optional[Callable[..., None]] = None,
-        _filter_by_date: Optional[Callable[..., Any]] = None
+        _filter_by_date: Optional[Callable[..., Any]] = None,
     ) -> List[Allele]:
         """Get alleles from REST API.
 
@@ -348,10 +346,7 @@ class APIMethods:
             if "searchFilters" not in req_data:
                 req_data["searchFilters"] = {}
             req_data["searchFilters"]["primaryExternalIdFilter"] = {
-                "primaryExternalId": {
-                    "queryString": "WB:WBTransgene",
-                    "tokenOperator": "OR"
-                }
+                "primaryExternalId": {"queryString": "WB:WBTransgene", "tokenOperator": "OR"}
             }
 
         response_data = self._make_request("POST", url, req_data)
@@ -395,7 +390,7 @@ class APIMethods:
         updated_after: Optional[Union[str, datetime]] = None,
         _apply_data_provider_filter: Optional[Callable[..., None]] = None,
         _apply_date_sorting: Optional[Callable[..., None]] = None,
-        _filter_by_date: Optional[Callable[..., Any]] = None
+        _filter_by_date: Optional[Callable[..., Any]] = None,
     ) -> List[AffectedGenomicModel]:
         """Get Affected Genomic Models (AGMs) from REST API.
 
@@ -420,10 +415,7 @@ class APIMethods:
             if "searchFilters" not in req_data:
                 req_data["searchFilters"] = {}
             req_data["searchFilters"]["subtypeFilter"] = {
-                "subtype.name": {
-                    "queryString": subtype,
-                    "tokenOperator": "OR"
-                }
+                "subtype.name": {"queryString": subtype, "tokenOperator": "OR"}
             }
 
         if _apply_date_sorting:
@@ -468,7 +460,7 @@ class APIMethods:
         updated_after: Optional[Union[str, datetime]] = None,
         _apply_data_provider_filter: Optional[Callable[..., None]] = None,
         _apply_date_sorting: Optional[Callable[..., None]] = None,
-        _filter_by_date: Optional[Callable[..., Any]] = None
+        _filter_by_date: Optional[Callable[..., Any]] = None,
     ) -> List[AffectedGenomicModel]:
         """Get zebrafish AGMs from REST API.
 
@@ -493,7 +485,7 @@ class APIMethods:
             updated_after=updated_after,
             _apply_data_provider_filter=_apply_data_provider_filter,
             _apply_date_sorting=_apply_date_sorting,
-            _filter_by_date=_filter_by_date
+            _filter_by_date=_filter_by_date,
         )
 
     # Search methods
@@ -504,7 +496,7 @@ class APIMethods:
         limit: int = 5000,
         page: int = 0,
         updated_after: Optional[Union[str, datetime]] = None,
-        _apply_date_sorting: Optional[Callable[..., None]] = None
+        _apply_date_sorting: Optional[Callable[..., None]] = None,
     ) -> APIResponse:
         """Generic search method for any entity type.
 
