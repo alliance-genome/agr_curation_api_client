@@ -156,3 +156,4 @@ scripts/local_db_tunnel_env.sh
 agr_curation_schema/
 DISEASE_ANNOTATIONS_PLAN.md
 TEST_CREATION.md
+SCHEMA_CHANGE_DETECTION_PLAN.md
