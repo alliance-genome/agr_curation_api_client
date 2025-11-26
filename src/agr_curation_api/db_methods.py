@@ -2835,15 +2835,16 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             if annotation_type == "gene":
-                sql_query = self._build_gene_disease_query(limit, offset)
+                sql_query, params = self._build_gene_disease_query(limit, offset)
             elif annotation_type == "allele":
-                sql_query = self._build_allele_disease_query(limit, offset)
+                sql_query, params = self._build_allele_disease_query(limit, offset)
             elif annotation_type == "agm":
-                sql_query = self._build_agm_disease_query(limit, offset)
+                sql_query, params = self._build_agm_disease_query(limit, offset)
             else:
                 raise ValueError(f"Invalid annotation_type: {annotation_type}")
 
-            rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).fetchall()
+            params["taxon_curie"] = taxon_curie
+            rows = session.execute(sql_query, params).fetchall()
 
             annotations = []
             for row in rows:
@@ -2890,15 +2891,16 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             if annotation_type == "gene":
-                sql_query = self._build_gene_disease_query(limit, offset)
+                sql_query, params = self._build_gene_disease_query(limit, offset)
             elif annotation_type == "allele":
-                sql_query = self._build_allele_disease_query(limit, offset)
+                sql_query, params = self._build_allele_disease_query(limit, offset)
             elif annotation_type == "agm":
-                sql_query = self._build_agm_disease_query(limit, offset)
+                sql_query, params = self._build_agm_disease_query(limit, offset)
             else:
                 raise ValueError(f"Invalid annotation_type: {annotation_type}")
 
-            rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).fetchall()
+            params["taxon_curie"] = taxon_curie
+            rows = session.execute(sql_query, params).fetchall()
 
             results = []
             for row in rows:
@@ -2951,7 +2953,12 @@ class DatabaseMethods:
             elif annotation_type == "agm":
                 type_filter = "AND EXISTS (SELECT 1 FROM agmdiseaseannotation agmda WHERE agmda.id = da.id)"
 
-            limit_clause = f"LIMIT {limit}" if limit else ""
+            # Build LIMIT clause with parameter
+            params: dict[str, Any] = {"disease_curie": disease_curie}
+            limit_clause = ""
+            if limit is not None:
+                limit_clause = "LIMIT :limit_val"
+                params["limit_val"] = limit
 
             sql_query = text(
                 f"""
@@ -2983,7 +2990,7 @@ class DatabaseMethods:
             """
             )
 
-            rows = session.execute(sql_query, {"disease_curie": disease_curie}).fetchall()
+            rows = session.execute(sql_query, params).fetchall()
 
             annotations = []
             for row in rows:
@@ -3039,12 +3046,25 @@ class DatabaseMethods:
 
     def _build_gene_disease_query(
         self, limit: Optional[int] = None, offset: Optional[int] = None
-    ) -> Any:
-        """Build SQL query for gene disease annotations."""
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        offset_clause = f"OFFSET {offset}" if offset else ""
+    ) -> tuple[Any, dict]:
+        """Build SQL query for gene disease annotations.
 
-        return text(
+        Returns:
+            Tuple of (query, params) where params includes taxon_curie placeholder
+        """
+        params: dict[str, Any] = {}
+
+        # Build LIMIT/OFFSET clauses with parameters
+        limit_clause = ""
+        offset_clause = ""
+        if limit is not None:
+            limit_clause = "LIMIT :limit_val"
+            params["limit_val"] = limit
+        if offset is not None:
+            offset_clause = "OFFSET :offset_val"
+            params["offset_val"] = offset
+
+        query = text(
             f"""
         SELECT
             da.id,
@@ -3088,15 +3108,29 @@ class DatabaseMethods:
         {offset_clause}
         """
         )
+        return query, params
 
     def _build_allele_disease_query(
         self, limit: Optional[int] = None, offset: Optional[int] = None
-    ) -> Any:
-        """Build SQL query for allele disease annotations."""
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        offset_clause = f"OFFSET {offset}" if offset else ""
+    ) -> tuple[Any, dict]:
+        """Build SQL query for allele disease annotations.
 
-        return text(
+        Returns:
+            Tuple of (query, params) where params includes taxon_curie placeholder
+        """
+        params: dict[str, Any] = {}
+
+        # Build LIMIT/OFFSET clauses with parameters
+        limit_clause = ""
+        offset_clause = ""
+        if limit is not None:
+            limit_clause = "LIMIT :limit_val"
+            params["limit_val"] = limit
+        if offset is not None:
+            offset_clause = "OFFSET :offset_val"
+            params["offset_val"] = offset
+
+        query = text(
             f"""
         SELECT
             da.id,
@@ -3140,15 +3174,29 @@ class DatabaseMethods:
         {offset_clause}
         """
         )
+        return query, params
 
     def _build_agm_disease_query(
         self, limit: Optional[int] = None, offset: Optional[int] = None
-    ) -> Any:
-        """Build SQL query for AGM disease annotations."""
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        offset_clause = f"OFFSET {offset}" if offset else ""
+    ) -> tuple[Any, dict]:
+        """Build SQL query for AGM disease annotations.
 
-        return text(
+        Returns:
+            Tuple of (query, params) where params includes taxon_curie placeholder
+        """
+        params: dict[str, Any] = {}
+
+        # Build LIMIT/OFFSET clauses with parameters
+        limit_clause = ""
+        offset_clause = ""
+        if limit is not None:
+            limit_clause = "LIMIT :limit_val"
+            params["limit_val"] = limit
+        if offset is not None:
+            offset_clause = "OFFSET :offset_val"
+            params["offset_val"] = offset
+
+        query = text(
             f"""
         SELECT
             da.id,
@@ -3191,6 +3239,7 @@ class DatabaseMethods:
         {offset_clause}
         """
         )
+        return query, params
 
     def _build_disease_annotation_from_row(
         self, row: Any, annotation_type: str, evidence_codes: List[str]
