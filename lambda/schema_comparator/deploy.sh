@@ -5,6 +5,10 @@
 #   --create  Create a new Lambda function
 #   --update  Update existing Lambda function code (default)
 #
+# Prerequisites:
+#   - AWS CLI configured with appropriate credentials
+#   - Access to Alliance Genome AWS account (100225593120)
+#
 # Note: psycopg2 is provided via a Lambda Layer, not bundled in the deployment package.
 
 set -e
@@ -12,24 +16,28 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Configuration
+# Alliance Genome AWS Account Configuration
+# These are resource identifiers, not secrets
+AWS_ACCOUNT_ID="100225593120"
+AWS_REGION="us-east-1"
+
+# Lambda Configuration
 FUNCTION_NAME="agr-schema-comparator"
-ROLE_ARN="arn:aws:iam::100225593120:role/agr-schema-comparator-role"
+ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/agr-schema-comparator-role"
 HANDLER="handler.lambda_handler"
 RUNTIME="python3.11"
 TIMEOUT=300
 MEMORY=256
-AWS_PROFILE="${AWS_PROFILE:-ctabone}"
 
-# Lambda Layer for psycopg2 (created separately, see below)
-PSYCOPG2_LAYER_ARN="arn:aws:lambda:us-east-1:100225593120:layer:psycopg2-py311:2"
+# Lambda Layer for psycopg2 (created separately, see README)
+PSYCOPG2_LAYER_ARN="arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:layer:psycopg2-py311:2"
 
-# VPC Configuration - use PRIVATE subnets (route through NAT for SNS access)
+# VPC Configuration - private subnets with NAT Gateway access
 VPC_SUBNET_IDS="subnet-0d4703177afb1797d,subnet-04019d42d5c9e6fb9,subnet-049778993fb504a7c"
 VPC_SECURITY_GROUP="sg-03a0d277f55da5161"
 
-# Environment variables for Lambda
-SNS_TOPIC_ARN="arn:aws:sns:us-east-1:100225593120:agr-schema-change-notifications"
+# SNS Topic for notifications
+SNS_TOPIC_ARN="arn:aws:sns:${AWS_REGION}:${AWS_ACCOUNT_ID}:agr-schema-change-notifications"
 
 # Parse arguments
 ACTION="update"
@@ -42,7 +50,7 @@ fi
 echo "=== AGR Schema Comparator Lambda Deployment ==="
 echo "Action: $ACTION"
 echo "Function: $FUNCTION_NAME"
-echo "AWS Profile: $AWS_PROFILE"
+echo "Region: $AWS_REGION"
 echo ""
 
 # Package the function
@@ -78,7 +86,7 @@ if [[ "$ACTION" == "create" ]]; then
         --layers "$PSYCOPG2_LAYER_ARN" \
         --vpc-config "SubnetIds=$VPC_SUBNET_IDS,SecurityGroupIds=$VPC_SECURITY_GROUP" \
         --environment "Variables={SNS_TOPIC_ARN=$SNS_TOPIC_ARN}" \
-        --profile "$AWS_PROFILE" \
+        --region "$AWS_REGION" \
         --output json
 
     echo "  Lambda function created successfully!"
@@ -90,7 +98,7 @@ else
     aws lambda update-function-code \
         --function-name "$FUNCTION_NAME" \
         --zip-file fileb://lambda.zip \
-        --profile "$AWS_PROFILE" \
+        --region "$AWS_REGION" \
         --output json | jq '{FunctionName, LastModified, CodeSize}'
 
     echo "  Lambda function updated successfully!"
@@ -105,11 +113,11 @@ echo ""
 echo "=== Deployment Complete ==="
 echo ""
 echo "To test the function:"
-echo "  aws lambda invoke --function-name $FUNCTION_NAME --payload '{\"skip_notification\": true}' --cli-binary-format raw-in-base64-out response.json --profile $AWS_PROFILE && cat response.json"
+echo "  aws lambda invoke --function-name $FUNCTION_NAME --payload '{\"skip_notification\": true}' --cli-binary-format raw-in-base64-out response.json --region $AWS_REGION && cat response.json"
 echo ""
 echo "Note: psycopg2 is provided via Lambda Layer: $PSYCOPG2_LAYER_ARN"
 echo ""
 echo "To recreate the psycopg2 layer if needed:"
 echo "  pip install --platform manylinux2014_x86_64 --target layer/python --only-binary=:all: --python-version 3.11 psycopg2-binary"
 echo "  cd layer && zip -r ../psycopg2-layer.zip python/ && cd .."
-echo "  aws lambda publish-layer-version --layer-name psycopg2-py311 --zip-file fileb://psycopg2-layer.zip --compatible-runtimes python3.11 --profile $AWS_PROFILE"
+echo "  aws lambda publish-layer-version --layer-name psycopg2-py311 --zip-file fileb://psycopg2-layer.zip --compatible-runtimes python3.11 --region $AWS_REGION"
