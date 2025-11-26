@@ -54,9 +54,16 @@ class DatabaseMethods:
         self._session_factory: Optional[sessionmaker[Session]] = None
 
     def _get_engine(self) -> Engine:
-        """Get or create database engine."""
+        """Get or create database engine.
+
+        Uses pool_pre_ping to detect and reconnect stale connections,
+        which is important for long-running test suites over SSM tunnels.
+        """
         if self._engine is None:
-            self._engine = create_engine(self.config.connection_string)
+            self._engine = create_engine(
+                self.config.connection_string,
+                pool_pre_ping=True,  # Verify connection is alive before each use
+            )
         return self._engine
 
     def _get_session_factory(self) -> sessionmaker[Session]:
