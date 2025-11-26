@@ -386,3 +386,107 @@ class AffectedGenomicModel(BaseModel):
     sequenceTargetingReagents: Optional[List[Dict[str, Any]]] = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class DiseaseAnnotation(BaseModel):
+    """Disease annotation model for gene, allele, or AGM disease associations.
+
+    Represents annotations asserting associations between biological entities
+    and diseases, supported by evidence from the literature.
+    """
+
+    # Database/identifier fields
+    id: Optional[int] = Field(None, description="Internal database ID")
+    curie: Optional[str] = Field(None, description="Alliance annotation CURIE (AGRKB:100...)")
+    unique_id: Optional[str] = Field(None, description="Unique identifier for the annotation")
+    primary_external_id: Optional[str] = Field(None, description="Primary external ID (e.g., WBDOannot...)")
+    mod_internal_id: Optional[str] = Field(None, description="MOD internal identifier")
+
+    # Subject (the entity being annotated)
+    subject_id: Optional[str] = Field(None, description="Subject identifier (gene/allele/AGM CURIE)")
+    subject_type: Optional[str] = Field(
+        None, description="Subject type: 'gene', 'allele', or 'agm'"
+    )
+    subject_symbol: Optional[str] = Field(None, description="Subject symbol for display")
+    subject_taxon: Optional[str] = Field(None, description="Subject taxon CURIE")
+
+    # Disease (the object of the annotation)
+    disease_curie: Optional[str] = Field(None, description="Disease Ontology CURIE (DOID:...)")
+    disease_name: Optional[str] = Field(None, description="Disease name")
+
+    # Annotation relationship
+    relation: Optional[str] = Field(
+        None,
+        description="Relationship type (is_marker_for, is_implicated_in, is_model_of, etc.)",
+    )
+    negated: bool = Field(False, description="Whether this annotation is negated")
+
+    # Evidence
+    reference_curie: Optional[str] = Field(
+        None, description="Reference CURIE (PMID or AGRKB identifier)"
+    )
+    evidence_codes: Optional[List[str]] = Field(
+        default_factory=list, description="ECO evidence code CURIEs"
+    )
+
+    # Data provenance
+    data_provider: Optional[str] = Field(
+        None, description="Source MOD abbreviation (WB, FB, MGI, etc.)"
+    )
+
+    # Optional qualifiers
+    genetic_sex: Optional[str] = Field(None, description="Genetic sex qualifier")
+    annotation_type: Optional[str] = Field(
+        None, description="Annotation type (manually_curated, high_throughput, etc.)"
+    )
+    disease_qualifiers: Optional[List[str]] = Field(
+        default_factory=list, description="Disease qualifier terms"
+    )
+
+    # Inferred entities (for allele/AGM annotations)
+    inferred_gene_id: Optional[str] = Field(
+        None, description="Inferred gene ID for allele/AGM annotations"
+    )
+    inferred_allele_id: Optional[str] = Field(
+        None, description="Inferred allele ID for AGM annotations"
+    )
+
+    # Asserted entities (manually curated associations)
+    asserted_gene_ids: Optional[List[str]] = Field(
+        default_factory=list, description="Manually asserted gene IDs"
+    )
+    asserted_allele_ids: Optional[List[str]] = Field(
+        default_factory=list, description="Manually asserted allele IDs"
+    )
+
+    # Genetic modifiers
+    modifier_gene_ids: Optional[List[str]] = Field(
+        default_factory=list, description="Genetic modifier gene IDs"
+    )
+    modifier_allele_ids: Optional[List[str]] = Field(
+        default_factory=list, description="Genetic modifier allele IDs"
+    )
+    modifier_agm_ids: Optional[List[str]] = Field(
+        default_factory=list, description="Genetic modifier AGM IDs"
+    )
+    modifier_relation: Optional[str] = Field(
+        None, description="How modifiers affect the disease model"
+    )
+
+    # With/from (for ISS/ISO evidence codes)
+    with_gene_ids: Optional[List[str]] = Field(
+        default_factory=list, description="Human genes for sequence similarity evidence"
+    )
+
+    # SGD-specific
+    sgd_strain_background_id: Optional[str] = Field(
+        None, description="SGD strain background AGM ID"
+    )
+
+    # Audit fields
+    date_created: Optional[datetime] = Field(None, description="Date annotation was created")
+    date_updated: Optional[datetime] = Field(None, description="Date annotation was last updated")
+    obsolete: bool = Field(False, description="Whether annotation is obsolete")
+    internal: bool = Field(False, description="Whether annotation is internal")
+
+    model_config = ConfigDict(extra="allow")

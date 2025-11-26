@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import ValidationError
 
-from .models import Gene, Allele, OntologyTermResult
+from .models import Gene, Allele, OntologyTermResult, DiseaseAnnotation
 from .exceptions import AGRAPIError
 
 logger = logging.getLogger(__name__)
@@ -2676,6 +2676,562 @@ class DatabaseMethods:
             raise AGRAPIError(f"Database query failed: {str(e)}")
         finally:
             session.close()
+
+    # Disease Annotation Methods
+
+    def get_disease_annotations_by_gene(
+        self,
+        gene_id: str,
+        include_evidence_codes: bool = True,
+    ) -> List[DiseaseAnnotation]:
+        """Get disease annotations for a specific gene.
+
+        Args:
+            gene_id: Gene CURIE or primary external ID (e.g., 'WB:WBGene00001044')
+            include_evidence_codes: Whether to fetch evidence codes for each annotation
+
+        Returns:
+            List of DiseaseAnnotation objects
+
+        Example:
+            annotations = db_methods.get_disease_annotations_by_gene('WB:WBGene00001044')
+            for ann in annotations:
+                print(f"{ann.disease_name}: {ann.relation}")
+        """
+        session = self._create_session()
+        try:
+            sql_query = text(
+                """
+            SELECT
+                da.id,
+                da.curie as annotation_curie,
+                da.uniqueid as unique_id,
+                da.primaryexternalid as primary_external_id,
+                da.modinternalid as mod_internal_id,
+                da.negated,
+                da.datecreated,
+                da.dateupdated,
+                be.primaryexternalid as subject_id,
+                symbol.displaytext as subject_symbol,
+                taxon.curie as subject_taxon,
+                disease_ot.curie as disease_curie,
+                disease_ot.name as disease_name,
+                relation_vt.name as relation_name,
+                ref.curie as reference_curie,
+                org.abbreviation as data_provider,
+                sex_vt.name as genetic_sex,
+                anntype_vt.name as annotation_type,
+                gda.sgdstrainbackground_id
+            FROM diseaseannotation da
+            JOIN genediseaseannotation gda ON gda.id = da.id
+            JOIN biologicalentity be ON be.id = gda.diseaseannotationsubject_id
+            JOIN ontologyterm disease_ot ON disease_ot.id = da.diseaseannotationobject_id
+            LEFT JOIN vocabularyterm relation_vt ON relation_vt.id = da.relation_id
+            LEFT JOIN informationcontententity ref ON ref.id = da.evidenceitem_id
+            LEFT JOIN organization org ON org.id = da.dataprovider_id
+            LEFT JOIN vocabularyterm sex_vt ON sex_vt.id = da.geneticsex_id
+            LEFT JOIN vocabularyterm anntype_vt ON anntype_vt.id = da.annotationtype_id
+            LEFT JOIN ontologyterm taxon ON taxon.id = be.taxon_id
+            LEFT JOIN slotannotation symbol ON be.id = symbol.singlegene_id
+                AND symbol.slotannotationtype = 'GeneSymbolSlotAnnotation'
+                AND symbol.obsolete = false
+            WHERE da.obsolete = false
+              AND da.internal = false
+              AND be.primaryexternalid = :gene_id
+            ORDER BY da.id
+            """
+            )
+
+            rows = session.execute(sql_query, {"gene_id": gene_id}).fetchall()
+
+            annotations = []
+            for row in rows:
+                evidence_codes = []
+                if include_evidence_codes:
+                    evidence_codes = self._get_disease_annotation_evidence_codes(session, row[0])
+
+                try:
+                    annotation = DiseaseAnnotation(
+                        id=row[0],
+                        curie=row[1],
+                        unique_id=row[2],
+                        primary_external_id=row[3],
+                        mod_internal_id=row[4],
+                        negated=row[5] or False,
+                        date_created=row[6],
+                        date_updated=row[7],
+                        subject_id=row[8],
+                        subject_symbol=row[9],
+                        subject_taxon=row[10],
+                        subject_type="gene",
+                        disease_curie=row[11],
+                        disease_name=row[12],
+                        relation=row[13],
+                        reference_curie=row[14],
+                        data_provider=row[15],
+                        genetic_sex=row[16],
+                        annotation_type=row[17],
+                        evidence_codes=evidence_codes,
+                    )
+                    annotations.append(annotation)
+                except ValidationError as e:
+                    logger.warning(f"Failed to parse disease annotation {row[0]}: {e}")
+
+            return annotations
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for gene {gene_id}: {str(e)}")
+        finally:
+            session.close()
+
+    def get_disease_annotations_by_taxon(
+        self,
+        taxon_curie: str,
+        annotation_type: str = "gene",
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        include_evidence_codes: bool = False,
+    ) -> List[DiseaseAnnotation]:
+        """Get disease annotations for all entities of a taxon.
+
+        Args:
+            taxon_curie: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239')
+            annotation_type: Type of annotations to return: 'gene', 'allele', 'agm', or 'all'
+            limit: Maximum number of annotations to return
+            offset: Number of annotations to skip (for pagination)
+            include_evidence_codes: Whether to fetch evidence codes (slower)
+
+        Returns:
+            List of DiseaseAnnotation objects
+
+        Example:
+            # Get C. elegans gene disease annotations
+            annotations = db_methods.get_disease_annotations_by_taxon(
+                'NCBITaxon:6239',
+                annotation_type='gene',
+                limit=100
+            )
+        """
+        if annotation_type == "all":
+            # Combine all three types
+            gene_anns = self.get_disease_annotations_by_taxon(
+                taxon_curie, "gene", limit, offset, include_evidence_codes
+            )
+            allele_anns = self.get_disease_annotations_by_taxon(
+                taxon_curie, "allele", limit, offset, include_evidence_codes
+            )
+            agm_anns = self.get_disease_annotations_by_taxon(
+                taxon_curie, "agm", limit, offset, include_evidence_codes
+            )
+            return gene_anns + allele_anns + agm_anns
+
+        session = self._create_session()
+        try:
+            if annotation_type == "gene":
+                sql_query = self._build_gene_disease_query(limit, offset)
+            elif annotation_type == "allele":
+                sql_query = self._build_allele_disease_query(limit, offset)
+            elif annotation_type == "agm":
+                sql_query = self._build_agm_disease_query(limit, offset)
+            else:
+                raise ValueError(f"Invalid annotation_type: {annotation_type}")
+
+            rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).fetchall()
+
+            annotations = []
+            for row in rows:
+                evidence_codes = []
+                if include_evidence_codes:
+                    evidence_codes = self._get_disease_annotation_evidence_codes(session, row[0])
+
+                try:
+                    annotation = self._build_disease_annotation_from_row(
+                        row, annotation_type, evidence_codes
+                    )
+                    annotations.append(annotation)
+                except ValidationError as e:
+                    logger.warning(f"Failed to parse disease annotation {row[0]}: {e}")
+
+            return annotations
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def get_disease_annotations_raw(
+        self,
+        taxon_curie: str,
+        annotation_type: str = "gene",
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get disease annotations as raw dictionaries.
+
+        This is a lightweight alternative that returns dictionaries instead
+        of Pydantic models for better performance with large datasets.
+
+        Args:
+            taxon_curie: NCBI Taxon CURIE
+            annotation_type: Type of annotations: 'gene', 'allele', or 'agm'
+            limit: Maximum number of annotations to return
+            offset: Number of annotations to skip
+
+        Returns:
+            List of dictionaries with disease annotation data
+        """
+        session = self._create_session()
+        try:
+            if annotation_type == "gene":
+                sql_query = self._build_gene_disease_query(limit, offset)
+            elif annotation_type == "allele":
+                sql_query = self._build_allele_disease_query(limit, offset)
+            elif annotation_type == "agm":
+                sql_query = self._build_agm_disease_query(limit, offset)
+            else:
+                raise ValueError(f"Invalid annotation_type: {annotation_type}")
+
+            rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).fetchall()
+
+            results = []
+            for row in rows:
+                result = {
+                    "id": row[0],
+                    "annotation_curie": row[1],
+                    "negated": row[5] or False,
+                    "subject_id": row[8],
+                    "subject_symbol": row[9],
+                    "subject_taxon": row[10],
+                    "subject_type": annotation_type,
+                    "disease_curie": row[11],
+                    "disease_name": row[12],
+                    "relation": row[13],
+                    "reference_curie": row[14],
+                    "data_provider": row[15],
+                }
+                results.append(result)
+
+            return results
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def get_disease_annotations_by_disease(
+        self,
+        disease_curie: str,
+        annotation_type: str = "all",
+        limit: Optional[int] = None,
+    ) -> List[DiseaseAnnotation]:
+        """Get all annotations for a specific disease.
+
+        Args:
+            disease_curie: Disease Ontology CURIE (e.g., 'DOID:4')
+            annotation_type: Type of annotations: 'gene', 'allele', 'agm', or 'all'
+            limit: Maximum number of annotations to return
+
+        Returns:
+            List of DiseaseAnnotation objects for the disease
+        """
+        session = self._create_session()
+        try:
+            type_filter = ""
+            if annotation_type == "gene":
+                type_filter = "AND EXISTS (SELECT 1 FROM genediseaseannotation gda WHERE gda.id = da.id)"
+            elif annotation_type == "allele":
+                type_filter = "AND EXISTS (SELECT 1 FROM allelediseaseannotation ada WHERE ada.id = da.id)"
+            elif annotation_type == "agm":
+                type_filter = "AND EXISTS (SELECT 1 FROM agmdiseaseannotation agmda WHERE agmda.id = da.id)"
+
+            limit_clause = f"LIMIT {limit}" if limit else ""
+
+            sql_query = text(
+                f"""
+            SELECT
+                da.id,
+                da.curie as annotation_curie,
+                da.uniqueid,
+                da.primaryexternalid,
+                da.modinternalid,
+                da.negated,
+                da.datecreated,
+                da.dateupdated,
+                disease_ot.curie as disease_curie,
+                disease_ot.name as disease_name,
+                relation_vt.name as relation_name,
+                ref.curie as reference_curie,
+                org.abbreviation as data_provider
+            FROM diseaseannotation da
+            JOIN ontologyterm disease_ot ON disease_ot.id = da.diseaseannotationobject_id
+            LEFT JOIN vocabularyterm relation_vt ON relation_vt.id = da.relation_id
+            LEFT JOIN informationcontententity ref ON ref.id = da.evidenceitem_id
+            LEFT JOIN organization org ON org.id = da.dataprovider_id
+            WHERE da.obsolete = false
+              AND da.internal = false
+              AND disease_ot.curie = :disease_curie
+              {type_filter}
+            ORDER BY da.id
+            {limit_clause}
+            """
+            )
+
+            rows = session.execute(sql_query, {"disease_curie": disease_curie}).fetchall()
+
+            annotations = []
+            for row in rows:
+                try:
+                    annotation = DiseaseAnnotation(
+                        id=row[0],
+                        curie=row[1],
+                        unique_id=row[2],
+                        primary_external_id=row[3],
+                        mod_internal_id=row[4],
+                        negated=row[5] or False,
+                        date_created=row[6],
+                        date_updated=row[7],
+                        disease_curie=row[8],
+                        disease_name=row[9],
+                        relation=row[10],
+                        reference_curie=row[11],
+                        data_provider=row[12],
+                    )
+                    annotations.append(annotation)
+                except ValidationError as e:
+                    logger.warning(f"Failed to parse disease annotation {row[0]}: {e}")
+
+            return annotations
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for disease {disease_curie}: {str(e)}")
+        finally:
+            session.close()
+
+    def _get_disease_annotation_evidence_codes(
+        self, session: Session, annotation_id: int
+    ) -> List[str]:
+        """Get evidence codes for a disease annotation.
+
+        Args:
+            session: Active database session
+            annotation_id: Disease annotation ID
+
+        Returns:
+            List of ECO CURIEs
+        """
+        sql_query = text(
+            """
+        SELECT ot.curie
+        FROM diseaseannotation_ontologyterm dao
+        JOIN ontologyterm ot ON ot.id = dao.evidencecodes_id
+        WHERE dao.diseaseannotation_id = :annotation_id
+        """
+        )
+        rows = session.execute(sql_query, {"annotation_id": annotation_id}).fetchall()
+        return [row[0] for row in rows]
+
+    def _build_gene_disease_query(
+        self, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Any:
+        """Build SQL query for gene disease annotations."""
+        limit_clause = f"LIMIT {limit}" if limit else ""
+        offset_clause = f"OFFSET {offset}" if offset else ""
+
+        return text(
+            f"""
+        SELECT
+            da.id,
+            da.curie as annotation_curie,
+            da.uniqueid as unique_id,
+            da.primaryexternalid as primary_external_id,
+            da.modinternalid as mod_internal_id,
+            da.negated,
+            da.datecreated,
+            da.dateupdated,
+            be.primaryexternalid as subject_id,
+            symbol.displaytext as subject_symbol,
+            taxon.curie as subject_taxon,
+            disease_ot.curie as disease_curie,
+            disease_ot.name as disease_name,
+            relation_vt.name as relation_name,
+            ref.curie as reference_curie,
+            org.abbreviation as data_provider,
+            sex_vt.name as genetic_sex,
+            anntype_vt.name as annotation_type,
+            sgd_be.primaryexternalid as sgd_strain_background_id
+        FROM diseaseannotation da
+        JOIN genediseaseannotation gda ON gda.id = da.id
+        JOIN biologicalentity be ON be.id = gda.diseaseannotationsubject_id
+        JOIN ontologyterm disease_ot ON disease_ot.id = da.diseaseannotationobject_id
+        JOIN ontologyterm taxon ON taxon.id = be.taxon_id
+        LEFT JOIN vocabularyterm relation_vt ON relation_vt.id = da.relation_id
+        LEFT JOIN informationcontententity ref ON ref.id = da.evidenceitem_id
+        LEFT JOIN organization org ON org.id = da.dataprovider_id
+        LEFT JOIN vocabularyterm sex_vt ON sex_vt.id = da.geneticsex_id
+        LEFT JOIN vocabularyterm anntype_vt ON anntype_vt.id = da.annotationtype_id
+        LEFT JOIN slotannotation symbol ON be.id = symbol.singlegene_id
+            AND symbol.slotannotationtype = 'GeneSymbolSlotAnnotation'
+            AND symbol.obsolete = false
+        LEFT JOIN biologicalentity sgd_be ON sgd_be.id = gda.sgdstrainbackground_id
+        WHERE da.obsolete = false
+          AND da.internal = false
+          AND taxon.curie = :taxon_curie
+        ORDER BY da.id
+        {limit_clause}
+        {offset_clause}
+        """
+        )
+
+    def _build_allele_disease_query(
+        self, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Any:
+        """Build SQL query for allele disease annotations."""
+        limit_clause = f"LIMIT {limit}" if limit else ""
+        offset_clause = f"OFFSET {offset}" if offset else ""
+
+        return text(
+            f"""
+        SELECT
+            da.id,
+            da.curie as annotation_curie,
+            da.uniqueid as unique_id,
+            da.primaryexternalid as primary_external_id,
+            da.modinternalid as mod_internal_id,
+            da.negated,
+            da.datecreated,
+            da.dateupdated,
+            be.primaryexternalid as subject_id,
+            symbol.displaytext as subject_symbol,
+            taxon.curie as subject_taxon,
+            disease_ot.curie as disease_curie,
+            disease_ot.name as disease_name,
+            relation_vt.name as relation_name,
+            ref.curie as reference_curie,
+            org.abbreviation as data_provider,
+            sex_vt.name as genetic_sex,
+            anntype_vt.name as annotation_type,
+            inferred_gene_be.primaryexternalid as inferred_gene_id
+        FROM diseaseannotation da
+        JOIN allelediseaseannotation ada ON ada.id = da.id
+        JOIN biologicalentity be ON be.id = ada.diseaseannotationsubject_id
+        JOIN ontologyterm disease_ot ON disease_ot.id = da.diseaseannotationobject_id
+        JOIN ontologyterm taxon ON taxon.id = be.taxon_id
+        LEFT JOIN vocabularyterm relation_vt ON relation_vt.id = da.relation_id
+        LEFT JOIN informationcontententity ref ON ref.id = da.evidenceitem_id
+        LEFT JOIN organization org ON org.id = da.dataprovider_id
+        LEFT JOIN vocabularyterm sex_vt ON sex_vt.id = da.geneticsex_id
+        LEFT JOIN vocabularyterm anntype_vt ON anntype_vt.id = da.annotationtype_id
+        LEFT JOIN slotannotation symbol ON be.id = symbol.singleallele_id
+            AND symbol.slotannotationtype = 'AlleleSymbolSlotAnnotation'
+            AND symbol.obsolete = false
+        LEFT JOIN biologicalentity inferred_gene_be ON inferred_gene_be.id = ada.inferredgene_id
+        WHERE da.obsolete = false
+          AND da.internal = false
+          AND taxon.curie = :taxon_curie
+        ORDER BY da.id
+        {limit_clause}
+        {offset_clause}
+        """
+        )
+
+    def _build_agm_disease_query(
+        self, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Any:
+        """Build SQL query for AGM disease annotations."""
+        limit_clause = f"LIMIT {limit}" if limit else ""
+        offset_clause = f"OFFSET {offset}" if offset else ""
+
+        return text(
+            f"""
+        SELECT
+            da.id,
+            da.curie as annotation_curie,
+            da.uniqueid as unique_id,
+            da.primaryexternalid as primary_external_id,
+            da.modinternalid as mod_internal_id,
+            da.negated,
+            da.datecreated,
+            da.dateupdated,
+            be.primaryexternalid as subject_id,
+            NULL as subject_symbol,
+            taxon.curie as subject_taxon,
+            disease_ot.curie as disease_curie,
+            disease_ot.name as disease_name,
+            relation_vt.name as relation_name,
+            ref.curie as reference_curie,
+            org.abbreviation as data_provider,
+            sex_vt.name as genetic_sex,
+            anntype_vt.name as annotation_type,
+            inferred_gene_be.primaryexternalid as inferred_gene_id,
+            inferred_allele_be.primaryexternalid as inferred_allele_id
+        FROM diseaseannotation da
+        JOIN agmdiseaseannotation agmda ON agmda.id = da.id
+        JOIN biologicalentity be ON be.id = agmda.diseaseannotationsubject_id
+        JOIN ontologyterm disease_ot ON disease_ot.id = da.diseaseannotationobject_id
+        JOIN ontologyterm taxon ON taxon.id = be.taxon_id
+        LEFT JOIN vocabularyterm relation_vt ON relation_vt.id = da.relation_id
+        LEFT JOIN informationcontententity ref ON ref.id = da.evidenceitem_id
+        LEFT JOIN organization org ON org.id = da.dataprovider_id
+        LEFT JOIN vocabularyterm sex_vt ON sex_vt.id = da.geneticsex_id
+        LEFT JOIN vocabularyterm anntype_vt ON anntype_vt.id = da.annotationtype_id
+        LEFT JOIN biologicalentity inferred_gene_be ON inferred_gene_be.id = agmda.inferredgene_id
+        LEFT JOIN biologicalentity inferred_allele_be ON inferred_allele_be.id = agmda.inferredallele_id
+        WHERE da.obsolete = false
+          AND da.internal = false
+          AND taxon.curie = :taxon_curie
+        ORDER BY da.id
+        {limit_clause}
+        {offset_clause}
+        """
+        )
+
+    def _build_disease_annotation_from_row(
+        self, row: Any, annotation_type: str, evidence_codes: List[str]
+    ) -> DiseaseAnnotation:
+        """Build a DiseaseAnnotation object from a database row.
+
+        Args:
+            row: Database row tuple
+            annotation_type: Type of annotation ('gene', 'allele', 'agm')
+            evidence_codes: List of evidence code CURIEs
+
+        Returns:
+            DiseaseAnnotation object
+        """
+        annotation_data = {
+            "id": row[0],
+            "curie": row[1],
+            "unique_id": row[2],
+            "primary_external_id": row[3],
+            "mod_internal_id": row[4],
+            "negated": row[5] or False,
+            "date_created": row[6],
+            "date_updated": row[7],
+            "subject_id": row[8],
+            "subject_symbol": row[9],
+            "subject_taxon": row[10],
+            "subject_type": annotation_type,
+            "disease_curie": row[11],
+            "disease_name": row[12],
+            "relation": row[13],
+            "reference_curie": row[14],
+            "data_provider": row[15],
+            "genetic_sex": row[16],
+            "annotation_type": row[17],
+            "evidence_codes": evidence_codes,
+        }
+
+        # Handle type-specific fields
+        if annotation_type == "gene" and len(row) > 18:
+            annotation_data["sgd_strain_background_id"] = row[18]
+        elif annotation_type == "allele" and len(row) > 18:
+            annotation_data["inferred_gene_id"] = row[18]
+        elif annotation_type == "agm" and len(row) > 18:
+            annotation_data["inferred_gene_id"] = row[18]
+            if len(row) > 19:
+                annotation_data["inferred_allele_id"] = row[19]
+
+        return DiseaseAnnotation(**annotation_data)
 
     def close(self) -> None:
         """Close database connections."""
