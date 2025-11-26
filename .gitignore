@@ -151,3 +151,8 @@ CLAUDE.md*_SUMMARY.md
 docs/
 scripts/local_db_tunnel.sh
 scripts/local_db_tunnel_env.sh
+
+# Development files
+agr_curation_schema/
+DISEASE_ANNOTATIONS_PLAN.md
+TEST_CREATION.md

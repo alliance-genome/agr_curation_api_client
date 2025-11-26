@@ -29,6 +29,7 @@ from .models import (
     DataProvider,
     SlotAnnotation,
     AffectedGenomicModel,
+    DiseaseAnnotation,
 )
 from .graphql_queries import (
     GraphQLQueryBuilder,
@@ -60,6 +61,7 @@ __all__ = [
     "DataProvider",
     "SlotAnnotation",
     "AffectedGenomicModel",
+    "DiseaseAnnotation",
     "GraphQLQueryBuilder",
     "FieldSelector",
     "build_graphql_params",

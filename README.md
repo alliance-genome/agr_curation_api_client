@@ -14,6 +14,7 @@ A unified Python client for Alliance of Genome Resources (AGR) curation APIs.
 - **Type Safety**: Full type hints and Pydantic models for request/response validation
 - **Entity Search**: Partial matching and synonym search for genes, alleles, and other entities
 - **Ontology Search**: Comprehensive search across 45 ontology types (GO, DO, HP, and more)
+- **Disease Annotations**: Query disease associations for genes, alleles, and AGMs across all MODs
 - **Retry Logic**: Automatic retry with exponential backoff for transient failures
 - **Authentication**: Support for API key and Okta token authentication
 - **Async Support**: Built on httpx for both sync and async operations
@@ -167,6 +168,87 @@ for expr in wb_expressions:
         anatomy = expr.expression_pattern.get("whereExpressed", {}).get("anatomicalStructure", {}).get("curie")
         print(f"  Expressed in: {anatomy}")
 ```
+
+### Working with Disease Annotations
+
+The client provides comprehensive disease annotation queries supporting gene, allele, and AGM (affected genomic model) disease associations.
+
+```python
+from agr_curation_api import DatabaseMethods
+
+db = DatabaseMethods()
+
+# Get disease annotations for a specific gene
+annotations = db.get_disease_annotations_by_gene("WB:WBGene00004271")  # rab-7
+
+for ann in annotations:
+    print(f"Disease: {ann.disease_name} ({ann.disease_curie})")
+    print(f"  Relation: {ann.relation}")
+    print(f"  Reference: {ann.reference_curie}")
+
+# Include ECO evidence codes
+annotations = db.get_disease_annotations_by_gene(
+    "WB:WBGene00004271",
+    include_evidence_codes=True
+)
+
+for ann in annotations:
+    if ann.evidence_codes:
+        print(f"Evidence: {', '.join(ann.evidence_codes)}")
+
+# Get disease annotations by species and annotation type
+# annotation_type: "gene", "allele", or "agm"
+worm_gene_diseases = db.get_disease_annotations_by_taxon(
+    "NCBITaxon:6239",           # C. elegans
+    annotation_type="gene",
+    limit=100
+)
+
+# Mouse uses allele-level annotations (not gene-level)
+mouse_allele_diseases = db.get_disease_annotations_by_taxon(
+    "NCBITaxon:10090",          # M. musculus
+    annotation_type="allele",
+    limit=100
+)
+
+# FlyBase uses AGM-level annotations
+fly_agm_diseases = db.get_disease_annotations_by_taxon(
+    "NCBITaxon:7227",           # D. melanogaster
+    annotation_type="agm",
+    limit=100
+)
+
+# Get annotations for a specific disease
+obesity_annotations = db.get_disease_annotations_by_disease(
+    "DOID:9970",                # obesity
+    annotation_type="gene",     # optional filter
+    limit=50
+)
+
+# Lightweight dictionary output for performance
+raw_results = db.get_disease_annotations_raw(
+    "NCBITaxon:6239",
+    annotation_type="gene",
+    limit=100
+)
+
+for r in raw_results:
+    print(f"{r['subject_id']}: {r['disease_name']}")
+```
+
+**Note on Data Provider Coverage:**
+
+Different MODs submit disease annotations at different levels:
+
+| Provider | Gene | Allele | AGM |
+|----------|:----:|:------:|:---:|
+| Human (OMIM) | ✓ | - | - |
+| Rat (RGD) | ✓ | ✓ | ✓ |
+| Yeast (SGD) | ✓ | - | - |
+| C. elegans (WB) | ✓ | ✓ | ✓ |
+| Mouse (MGI) | - | ✓ | ✓ |
+| Fly (FB) | - | - | ✓ |
+| Zebrafish (ZFIN) | - | - | ✓ |
 
 ### Working with Alleles
 
