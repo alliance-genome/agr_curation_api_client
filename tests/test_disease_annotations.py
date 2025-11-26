@@ -8,10 +8,6 @@ against production database.
 
 import pytest
 import os
-import sys
-
-# Add src to path to allow direct imports without full package
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agr_curation_api.db_methods import DatabaseMethods
 from agr_curation_api.models import DiseaseAnnotation
