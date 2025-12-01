@@ -2558,22 +2558,29 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def get_atp_descendants(self, ancestor_curie: str) -> List[Dict[str, str]]:
-        """Get all descendants of an ATP ontology term.
+    def get_atp_descendants(self, ancestor_curie: str, direct_children_only: bool = False) -> List[Dict[str, str]]:
+        """Get descendants of an ATP ontology term.
 
         Args:
             ancestor_curie: ATP CURIE (e.g., 'ATP:0000002')
+            direct_children_only: If True, return only direct children (distance=1).
+                         If False (default), return all descendants (transitive).
 
         Returns:
             List of dictionaries with curie and name keys
 
         Example:
+            # Get all descendants (transitive)
             descendants = db_methods.get_atp_descendants('ATP:0000002')
+
+            # Get only direct children
+            children = db_methods.get_atp_descendants('ATP:0000002', direct_only=True)
         """
         session = self._create_session()
         try:
+            distance_filter = "AND otc.distance = 1" if direct_children_only else ""
             sql_query = text(
-                """
+                f"""
             SELECT DISTINCT ot.curie, ot.name
             FROM ontologyterm ot
             JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -2581,6 +2588,7 @@ class DatabaseMethods:
             WHERE ot.ontologytermtype = 'ATPTerm'
             AND ot.obsolete = false
             AND ancestor.curie = :ancestor_curie
+            {distance_filter}
             """
             )
             rows = session.execute(sql_query, {"ancestor_curie": ancestor_curie}).fetchall()
