@@ -2574,7 +2574,7 @@ class DatabaseMethods:
             descendants = db_methods.get_atp_descendants('ATP:0000002')
 
             # Get only direct children
-            children = db_methods.get_atp_descendants('ATP:0000002', direct_only=True)
+            children = db_methods.get_atp_descendants('ATP:0000002', direct_children_only=True)
         """
         session = self._create_session()
         try:
