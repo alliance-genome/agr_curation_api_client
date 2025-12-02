@@ -28,6 +28,7 @@ from .models import (
     Gene,
     NCBITaxonTerm,
     OntologyTerm,
+    OntologyTermResult,
     ExpressionAnnotation,
     Allele,
     APIResponse,
@@ -648,6 +649,47 @@ class AGRCurationAPIClient:
     def get_ontology_node_children(self, node_curie: str, node_type: str) -> List[OntologyTerm]:
         """Get children of an ontology node."""
         return self._api_methods.get_ontology_node_children(node_curie, node_type)
+
+    def get_ontology_term(self, curie: str) -> Optional[OntologyTermResult]:
+        """Get a specific ontology term by CURIE from the database.
+
+        Args:
+            curie: Ontology term CURIE (e.g., 'GO:0008150', 'WBbt:0005062', 'DOID:4')
+
+        Returns:
+            OntologyTermResult object or None if not found
+
+        Example:
+            term = client.get_ontology_term('GO:0008150')
+            if term:
+                print(f"{term.curie}: {term.name}")
+                print(f"Synonyms: {', '.join(term.synonyms)}")
+        """
+        return self._get_db_methods().get_ontology_term(curie)
+
+    def get_ontology_terms(
+        self, curies: List[str]
+    ) -> Dict[str, Optional[OntologyTermResult]]:
+        """Get multiple ontology terms by their CURIEs from the database.
+
+        This performs a bulk lookup by CURIEs with synonym aggregation. More efficient
+        than calling get_ontology_term multiple times as it uses a single SQL query.
+
+        Args:
+            curies: List of ontology term CURIEs (e.g., ['GO:0008150', 'GO:0003674'])
+
+        Returns:
+            Dictionary mapping CURIEs to OntologyTermResult objects (or None if not found)
+
+        Example:
+            terms = client.get_ontology_terms(['GO:0008150', 'GO:0003674'])
+            for curie, term in terms.items():
+                if term:
+                    print(f"{curie}: {term.name}")
+                else:
+                    print(f"{curie}: Not found")
+        """
+        return self._get_db_methods().get_ontology_terms(curies)
 
     # Expression annotation methods with data source routing
     def get_expression_annotations(

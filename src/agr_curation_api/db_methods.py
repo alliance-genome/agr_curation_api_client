@@ -1565,6 +1565,75 @@ class DatabaseMethods:
         finally:
             session.close()
 
+    def get_ontology_terms(self, curies: List[str]) -> Dict[str, Optional["OntologyTermResult"]]:
+        """Get multiple ontology terms by their CURIEs from the database.
+
+        This performs a bulk lookup by CURIEs with synonym aggregation. More efficient
+        than calling get_ontology_term multiple times as it uses a single SQL query.
+
+        Args:
+            curies: List of ontology term CURIEs (e.g., ['WBbt:0005062', 'GO:0005634'])
+
+        Returns:
+            Dictionary mapping CURIEs to OntologyTermResult objects (or None if not found)
+
+        Example:
+            terms = db.get_ontology_terms(['WBbt:0005062', 'GO:0005634'])
+            for curie, term in terms.items():
+                if term:
+                    print(f"{curie}: {term.name}")
+                else:
+                    print(f"{curie}: Not found")
+        """
+        if not curies:
+            return {}
+
+        session = self._create_session()
+        try:
+            sql_query = text(
+                """
+            SELECT
+                ot.curie,
+                ot.name,
+                ot.namespace,
+                ot.definition,
+                ot.ontologytermtype,
+                ARRAY_AGG(DISTINCT ots.name) FILTER (WHERE ots.name IS NOT NULL) as synonyms
+            FROM
+                ontologyterm ot
+                LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+            WHERE
+                ot.curie = ANY(:curies)
+            AND
+                ot.obsolete = false
+            GROUP BY
+                ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
+            """
+            )
+
+            rows = session.execute(sql_query, {"curies": curies}).fetchall()
+
+            # Initialize results with None for all requested CURIEs
+            results: Dict[str, Optional["OntologyTermResult"]] = {curie: None for curie in curies}
+
+            # Populate results with found terms
+            for row in rows:
+                results[row[0]] = OntologyTermResult(
+                    curie=row[0],
+                    name=row[1],
+                    namespace=row[2] or "",
+                    definition=row[3],
+                    ontology_type=row[4],
+                    synonyms=row[5] or [],
+                )
+
+            return results
+
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for ontology terms: {str(e)}")
+        finally:
+            session.close()
+
     def search_ontology_terms(
         self, term: str, ontology_type: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
     ) -> List["OntologyTermResult"]:
