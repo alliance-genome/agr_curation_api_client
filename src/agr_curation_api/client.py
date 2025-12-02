@@ -921,19 +921,26 @@ class AGRCurationAPIClient:
         """
         return self._get_db_methods().search_atp_topics(topic=topic, mod_abbr=mod_abbr, limit=limit)
 
-    def get_atp_descendants(self, ancestor_curie: str) -> List[Dict[str, str]]:
-        """Get all descendants of an ATP ontology term.
+    def get_atp_descendants(self, ancestor_curie: str, direct_children_only: bool = False) -> List[Dict[str, str]]:
+        """Get descendants of an ATP ontology term.
 
         Args:
             ancestor_curie: ATP CURIE (e.g., 'ATP:0000002')
+            direct_children_only: If True, return only direct children (distance=1).
+                                  If False (default), return all descendants (transitive).
 
         Returns:
             List of dictionaries with curie and name keys
 
         Example:
+            # Get all descendants (transitive)
             descendants = client.get_atp_descendants('ATP:0000002')
+
+            # Get only direct children
+            children = client.get_atp_descendants('ATP:0000002', direct_children_only=True)
         """
-        return self._get_db_methods().get_atp_descendants(ancestor_curie=ancestor_curie)
+        return self._get_db_methods().get_atp_descendants(ancestor_curie=ancestor_curie,
+                                                          direct_children_only=direct_children_only)
 
     def search_ontology_ancestors_or_descendants(self, ontology_node: str, direction: str = "descendants") -> List[str]:
         """Get ancestors or descendants of an ontology node.
