@@ -205,18 +205,25 @@ jobs:
           done
 
           # Start keepalive to prevent idle timeout
-          # Send pg_isready every 30 seconds to keep tunnel alive
-          # Use nohup to persist across step boundaries
-          nohup bash -c "
-            while ps -p $SSM_PID >/dev/null 2>&1; do
-              sleep 30
-              pg_isready -h localhost -p $LOCAL_PORT -t 1 >/dev/null 2>&1 || true
+          # Send pg_isready every 10 seconds (more frequent) to keep tunnel alive
+          # Export variables so they're available in the subshell
+          export KEEPALIVE_SSM_PID=$SSM_PID
+          export KEEPALIVE_PORT=$LOCAL_PORT
+          nohup bash -c '
+            echo "Keepalive started for SSM PID: $KEEPALIVE_SSM_PID, Port: $KEEPALIVE_PORT"
+            while true; do
+              if ! ps -p $KEEPALIVE_SSM_PID >/dev/null 2>&1; then
+                echo "SSM process $KEEPALIVE_SSM_PID is no longer running, exiting keepalive"
+                exit 0
+              fi
+              pg_isready -h localhost -p $KEEPALIVE_PORT -t 1 >/dev/null 2>&1 || echo "pg_isready failed"
+              sleep 10
             done
-          " > /tmp/keepalive.log 2>&1 &
+          ' > /tmp/keepalive.log 2>&1 &
           KEEPALIVE_PID=$!
           disown $KEEPALIVE_PID
           echo "keepalive_pid=$KEEPALIVE_PID" >> $GITHUB_OUTPUT
-          echo "✅ Started keepalive process (PID: $KEEPALIVE_PID)"
+          echo "✅ Started keepalive process (PID: $KEEPALIVE_PID) monitoring SSM PID: $SSM_PID"
 
       - name: Run database integration tests
         env:
