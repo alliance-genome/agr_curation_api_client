@@ -1533,10 +1533,11 @@ class DatabaseMethods:
                 ot.namespace,
                 ot.definition,
                 ot.ontologytermtype,
-                ARRAY_AGG(DISTINCT ots.name) FILTER (WHERE ots.name IS NOT NULL) as synonyms
+                ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
             FROM
                 ontologyterm ot
                 LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
             WHERE
                 ot.curie = :curie
             AND
@@ -1598,10 +1599,11 @@ class DatabaseMethods:
                 ot.namespace,
                 ot.definition,
                 ot.ontologytermtype,
-                ARRAY_AGG(DISTINCT ots.name) FILTER (WHERE ots.name IS NOT NULL) as synonyms
+                ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms
             FROM
                 ontologyterm ot
                 LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
             WHERE
                 ot.curie = ANY(:curies)
             AND

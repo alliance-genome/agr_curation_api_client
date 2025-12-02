@@ -95,9 +95,8 @@ class AGRCurationAPIClient:
         self.config = config
         self.base_url = str(self.config.base_url)
 
-        # Initialize authentication token if not provided
-        if not self.config.okta_token:
-            self.config.okta_token = get_authentication_token()
+        # Authentication token is lazily initialized when needed
+        self._okta_token_initialized = False
 
         # Initialize data access modules
         self._api_methods = APIMethods(self._make_request)
@@ -116,6 +115,21 @@ class AGRCurationAPIClient:
         if self._db_methods is None:
             self._db_methods = DatabaseMethods(DatabaseConfig())  # type: ignore[assignment]
         return self._db_methods  # type: ignore[return-value]
+
+    def _get_okta_token(self) -> Optional[str]:
+        """Get OKTA token, initializing lazily if needed.
+
+        This method only fetches the token when first needed for API/GraphQL calls,
+        allowing DB-only usage without OKTA credentials.
+        """
+        if not self._okta_token_initialized:
+            if not self.config.okta_token:
+                try:
+                    self.config.okta_token = get_authentication_token()
+                except Exception as e:
+                    logger.warning(f"Failed to get OKTA token: {e}. API/GraphQL calls may fail.")
+            self._okta_token_initialized = True
+        return self.config.okta_token
 
     def _execute_with_fallback(
         self,
@@ -202,9 +216,10 @@ class AGRCurationAPIClient:
         raise AGRAPIError(error_msg)
 
     def _get_headers(self) -> Dict[str, str]:
-        """Get headers with authentication token."""
-        if self.config.okta_token:
-            headers = generate_headers(self.config.okta_token)
+        """Get headers with authentication token (lazily initialized)."""
+        token = self._get_okta_token()
+        if token:
+            headers = generate_headers(token)
             return dict(headers)
         return {"Content-Type": "application/json", "Accept": "application/json"}
 
