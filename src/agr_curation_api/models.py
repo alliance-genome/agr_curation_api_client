@@ -13,7 +13,7 @@ class APIConfig(BaseModel):
         default_factory=lambda: HttpUrl(os.getenv("ATEAM_API_URL", "https://curation.alliancegenome.org/api")),
         description="Base URL for the A-Team Curation API",
     )
-    okta_token: Optional[str] = Field(None, description="Okta bearer token for authentication")
+    auth_token: Optional[str] = Field(None, description="Okta bearer token for authentication")
     timeout: timedelta = Field(default=timedelta(seconds=30), description="Request timeout")
     max_retries: int = Field(3, ge=0, description="Maximum number of retry attempts")
     retry_delay: timedelta = Field(default=timedelta(seconds=1), description="Delay between retry attempts")

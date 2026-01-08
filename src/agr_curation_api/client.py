@@ -14,7 +14,7 @@ from enum import Enum
 from types import TracebackType
 from typing import Optional, Dict, Any, List, Union, Type, Callable
 
-from fastapi_okta.okta_utils import get_authentication_token, generate_headers
+from agr_cognito_py import get_authentication_token, generate_headers
 
 from .api_methods import APIMethods
 from .db_methods import DatabaseMethods, DatabaseConfig
@@ -96,7 +96,7 @@ class AGRCurationAPIClient:
         self.base_url = str(self.config.base_url)
 
         # Authentication token is lazily initialized when needed
-        self._okta_token_initialized = False
+        self._auth_token_initialized = False
 
         # Initialize data access modules
         self._api_methods = APIMethods(self._make_request)
@@ -116,20 +116,20 @@ class AGRCurationAPIClient:
             self._db_methods = DatabaseMethods(DatabaseConfig())  # type: ignore[assignment]
         return self._db_methods  # type: ignore[return-value]
 
-    def _get_okta_token(self) -> Optional[str]:
+    def _get_auth_token(self) -> Optional[str]:
         """Get OKTA token, initializing lazily if needed.
 
         This method only fetches the token when first needed for API/GraphQL calls,
         allowing DB-only usage without OKTA credentials.
         """
-        if not self._okta_token_initialized:
-            if not self.config.okta_token:
+        if not self._auth_token_initialized:
+            if not self.config.auth_token:
                 try:
-                    self.config.okta_token = get_authentication_token()
+                    self.config.auth_token = get_authentication_token()
                 except Exception as e:
                     logger.warning(f"Failed to get OKTA token: {e}. API/GraphQL calls may fail.")
-            self._okta_token_initialized = True
-        return self.config.okta_token
+            self.auth_token_initialized = True
+        return self.config.auth_token
 
     def _execute_with_fallback(
         self,
@@ -217,7 +217,7 @@ class AGRCurationAPIClient:
 
     def _get_headers(self) -> Dict[str, str]:
         """Get headers with authentication token (lazily initialized)."""
-        token = self._get_okta_token()
+        token = self._get_auth_token()
         if token:
             headers = generate_headers(token)
             return dict(headers)
