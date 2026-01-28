@@ -4,6 +4,8 @@ This module provides direct database access through SQL queries,
 adapted from agr_genedescriptions/pipelines/alliance/ateam_db_helper.py
 """
 
+from __future__ import annotations
+
 import logging
 from os import environ
 from typing import List, Optional, Dict, Any, Set
