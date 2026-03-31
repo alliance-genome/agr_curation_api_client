@@ -978,6 +978,22 @@ class AGRCurationAPIClient:
         """
         return self._get_db_methods().search_atp_topics(topic=topic, mod_abbr=mod_abbr, limit=limit)
 
+    def filter_atp_by_mod_subset(
+        self, curies: List[str], mod_abbr: str
+    ) -> List[str]:
+        """Filter ATP curies to only those in a MOD's subset.
+
+        Args:
+            curies: List of ATP CURIEs to filter
+            mod_abbr: MOD abbreviation (e.g., 'FB', 'WB')
+
+        Returns:
+            List of CURIEs from the input that are in the MOD's subset
+        """
+        return self._get_db_methods().filter_atp_by_mod_subset(
+            curies=curies, mod_abbr=mod_abbr
+        )
+
     def get_atp_descendants(self, ancestor_curie: str, direct_children_only: bool = False) -> List[Dict[str, str]]:
         """Get descendants of an ATP ontology term.
 

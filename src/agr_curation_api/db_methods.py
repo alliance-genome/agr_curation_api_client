@@ -11,7 +11,7 @@ from os import environ
 from typing import List, Optional, Dict, Any, Set
 from sqlalchemy.engine import Engine
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, bindparam
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import ValidationError
 
@@ -2626,6 +2626,48 @@ class DatabaseMethods:
 
             return [{"curie": row[0], "name": row[1]} for row in rows]
 
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    def filter_atp_by_mod_subset(
+        self, curies: List[str], mod_abbr: str
+    ) -> List[str]:
+        """Filter ATP curies to only those in a MOD's subset.
+
+        Checks the ontologyterm_subsets table for each curie to see if it
+        belongs to the MOD's tagged subset (e.g., 'FB_tag').
+
+        Args:
+            curies: List of ATP CURIEs to filter
+            mod_abbr: MOD abbreviation (e.g., 'FB', 'WB')
+
+        Returns:
+            List of CURIEs from the input that are in the MOD's subset
+        """
+        if not curies or not mod_abbr:
+            return []
+        session = self._create_session()
+        try:
+            sql_query = text(
+                """
+                SELECT DISTINCT ot.curie
+                FROM ontologyterm ot
+                JOIN ontologyterm_subsets s ON ot.id = s.ontologyterm_id
+                WHERE ot.ontologytermtype = 'ATPTerm'
+                AND UPPER(ot.curie) IN :curies
+                AND s.subsets = :mod_tag
+                """
+            ).bindparams(bindparam("curies", expanding=True))
+            rows = session.execute(
+                sql_query,
+                {
+                    "curies": [c.upper() for c in curies],
+                    "mod_tag": f"{mod_abbr}_tag",
+                },
+            ).fetchall()
+            return [row[0] for row in rows]
         except Exception as e:
             raise AGRAPIError(f"Database query failed: {str(e)}")
         finally:
