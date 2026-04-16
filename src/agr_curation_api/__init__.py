@@ -40,7 +40,7 @@ from .api_methods import APIMethods
 from .graphql_methods import GraphQLMethods
 from .db_methods import DatabaseMethods, DatabaseConfig
 
-__version__ = "0.1.0"
+__version__ = "0.9.0"
 __all__ = [
     "AGRCurationAPIClient",
     "DataSource",
