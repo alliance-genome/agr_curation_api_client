@@ -656,6 +656,30 @@ class AGRCurationAPIClient:
         """Get a specific NCBI Taxon term by ID."""
         return self._api_methods.get_ncbi_taxon_term(taxon_id)
 
+    def get_or_create_species(self, taxon_id: str) -> NCBITaxonTerm:
+        """Get or create a species (NCBITaxonTerm) in the A-Team system.
+
+        Returns the existing taxon if it already exists, or auto-imports
+        it from NCBI if it doesn't.
+
+        Args:
+            taxon_id: Numeric NCBI Taxon ID (e.g., '6239') or full CURIE
+                      (e.g., 'NCBITaxon:6239')
+
+        Returns:
+            NCBITaxonTerm object (existing or newly imported)
+
+        Raises:
+            AGRAPIError: If the taxon could not be retrieved or imported
+
+        Example:
+            client = AGRCurationAPIClient()
+            species = client.get_or_create_species('6239')
+            print(f"{species.curie}: {species.name}")
+            # NCBITaxon:6239: Caenorhabditis elegans
+        """
+        return self._api_methods.get_or_create_species(taxon_id)
+
     # Ontology methods (API only)
     def get_ontology_root_nodes(self, node_type: str) -> List[OntologyTerm]:
         """Get ontology root nodes."""

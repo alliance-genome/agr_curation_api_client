@@ -111,7 +111,8 @@ class APIMethods:
         """
         try:
             response_data = self._make_request("GET", f"gene/{gene_id}")
-            return Gene(**response_data)
+            entity = response_data.get("entity", response_data)
+            return Gene(**entity)
         except Exception:
             return None
 
@@ -201,9 +202,51 @@ class APIMethods:
         """
         try:
             response_data = self._make_request("GET", f"ncbitaxonterm/{taxon_id}")
-            return NCBITaxonTerm(**response_data)
+            entity = response_data.get("entity", response_data)
+            return NCBITaxonTerm(**entity)
         except Exception:
             return None
+
+    def get_or_create_species(self, taxon_id: str) -> NCBITaxonTerm:
+        """Get or create a species (NCBITaxonTerm) in the A-Team system.
+
+        Calls GET /api/ncbitaxonterm/NCBITaxon:{taxonId} which returns
+        the existing taxon or auto-imports it from NCBI if it doesn't
+        already exist.
+
+        Args:
+            taxon_id: Numeric NCBI Taxon ID (e.g., '6239') or full CURIE
+                      (e.g., 'NCBITaxon:6239')
+
+        Returns:
+            NCBITaxonTerm object (existing or newly imported)
+
+        Raises:
+            AGRAPIError: If the taxon could not be retrieved or imported
+        """
+        from .exceptions import AGRAPIError
+
+        if not taxon_id.startswith("NCBITaxon:"):
+            taxon_id = f"NCBITaxon:{taxon_id}"
+
+        response_data = self._make_request("GET", f"ncbitaxonterm/{taxon_id}")
+
+        error_msg = response_data.get("errorMessage")
+        error_msgs = response_data.get("errorMessages")
+        if error_msg:
+            raise AGRAPIError(f"Failed to get or create species {taxon_id}: {error_msg}")
+        if error_msgs:
+            details = "; ".join(f"{k}: {v}" for k, v in error_msgs.items())
+            raise AGRAPIError(f"Failed to get or create species {taxon_id}: {details}")
+
+        entity = response_data.get("entity")
+        if not entity:
+            raise AGRAPIError(f"Failed to get or create species {taxon_id}: no entity in response")
+
+        try:
+            return NCBITaxonTerm(**entity)
+        except ValidationError as e:
+            raise AGRAPIError(f"Failed to parse species response for {taxon_id}: {e}") from e
 
     # Ontology endpoints
     def get_ontology_root_nodes(self, node_type: str) -> List[OntologyTerm]:
@@ -376,7 +419,8 @@ class APIMethods:
         """
         try:
             response_data = self._make_request("GET", f"allele/{allele_id}")
-            return Allele(**response_data)
+            entity = response_data.get("entity", response_data)
+            return Allele(**entity)
         except Exception:
             return None
 
@@ -449,7 +493,8 @@ class APIMethods:
         """
         try:
             response_data = self._make_request("GET", f"agm/{agm_id}")
-            return AffectedGenomicModel(**response_data)
+            entity = response_data.get("entity", response_data)
+            return AffectedGenomicModel(**entity)
         except Exception:
             return None
 
