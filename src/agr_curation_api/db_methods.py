@@ -1074,7 +1074,46 @@ class DatabaseMethods:
                 {"wildcard": {"cross_references.curie.keyword": {"value": wildcard, "boost": 1.0}}}
             )
         else:
-            should.append({"match_phrase": {"title": {"query": query, "boost": 3.0}}})
+            # Typo-tolerant matching across the reference text fields. Required
+            # by the AI curation validators that resolve potentially garbled
+            # reference snippets extracted from papers. Two complementary
+            # multi_match clauses cover the two messy-input shapes:
+            #
+            # * ``cross_fields`` virtually concatenates title / citation /
+            #   abstract and matches tokens across them, which is the right
+            #   tool for citation-style chunks that span fields (e.g. author
+            #   name + title fragment + journal). ``minimum_should_match``
+            #   "3<80%" requires all tokens to match on short queries and
+            #   tolerates ~1 missing token on longer ones.
+            # * ``best_fields`` with ``fuzziness: AUTO`` handles typo'd queries
+            #   that fit inside a single field. ``cross_fields`` does not
+            #   support fuzziness, so we need the second clause to recover
+            #   misspellings.
+            #
+            # The ``match_phrase`` boost keeps clean exact-phrase title hits
+            # at the top, and the curie wildcards catch naked identifiers
+            # embedded in free text.
+            should.append(
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": ["title^3", "citation^2", "abstract"],
+                        "type": "cross_fields",
+                        "minimum_should_match": "3<80%",
+                    }
+                }
+            )
+            should.append(
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": ["title^3", "citation^2", "abstract"],
+                        "fuzziness": "AUTO",
+                        "operator": "and",
+                    }
+                }
+            )
+            should.append({"match_phrase": {"title": {"query": query, "boost": 5.0}}})
             should.append({"wildcard": {"curie.keyword": {"value": wildcard, "boost": 1.0}}})
             should.append(
                 {"wildcard": {"cross_references.curie.keyword": {"value": wildcard, "boost": 1.0}}}
