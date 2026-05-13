@@ -29,6 +29,8 @@ from .models import (
     NCBITaxonTerm,
     OntologyTerm,
     OntologyTermResult,
+    ReferenceResult,
+    VocabularyTermResult,
     ExpressionAnnotation,
     Allele,
     APIResponse,
@@ -706,9 +708,7 @@ class AGRCurationAPIClient:
         """
         return self._get_db_methods().get_ontology_term(curie)
 
-    def get_ontology_terms(
-        self, curies: List[str]
-    ) -> Dict[str, Optional[OntologyTermResult]]:
+    def get_ontology_terms(self, curies: List[str]) -> Dict[str, Optional[OntologyTermResult]]:
         """Get multiple ontology terms by their CURIEs from the database.
 
         This performs a bulk lookup by CURIEs with synonym aggregation. More efficient
@@ -729,6 +729,131 @@ class AGRCurationAPIClient:
                     print(f"{curie}: Not found")
         """
         return self._get_db_methods().get_ontology_terms(curies)
+
+    def search_ontology_terms(
+        self,
+        term: str,
+        ontology_type: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20,
+    ) -> List[OntologyTermResult]:
+        """Search curation database ontology terms by name and synonym."""
+        return self._get_db_methods().search_ontology_terms(
+            term=term,
+            ontology_type=ontology_type,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_anatomy_terms(
+        self,
+        term: str,
+        data_provider: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20,
+    ) -> List[OntologyTermResult]:
+        """Search anatomy ontology terms with data-provider/MOD filtering."""
+        return self._get_db_methods().search_anatomy_terms(
+            term=term,
+            data_provider=data_provider,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_life_stage_terms(
+        self,
+        term: str,
+        data_provider: str,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20,
+    ) -> List[OntologyTermResult]:
+        """Search life-stage ontology terms with data-provider/MOD filtering."""
+        return self._get_db_methods().search_life_stage_terms(
+            term=term,
+            data_provider=data_provider,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_go_terms(
+        self,
+        term: str,
+        go_aspect: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20,
+    ) -> List[OntologyTermResult]:
+        """Search Gene Ontology terms with optional aspect filtering."""
+        return self._get_db_methods().search_go_terms(
+            term=term,
+            go_aspect=go_aspect,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_disease_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List[OntologyTermResult]:
+        """Search Disease Ontology terms."""
+        return self._get_db_methods().search_disease_terms(
+            term=term, exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
+
+    def search_phenotype_terms(
+        self,
+        term: str,
+        organism: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        limit: int = 20,
+    ) -> List[OntologyTermResult]:
+        """Search phenotype ontology terms with optional organism/MOD filtering."""
+        return self._get_db_methods().search_phenotype_terms(
+            term=term,
+            organism=organism,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            limit=limit,
+        )
+
+    def search_chemical_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List[OntologyTermResult]:
+        """Search ChEBI ontology terms."""
+        return self._get_db_methods().search_chemical_terms(
+            term=term, exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
+
+    def search_evidence_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List[OntologyTermResult]:
+        """Search ECO evidence terms."""
+        return self._get_db_methods().search_evidence_terms(
+            term=term, exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
+
+    def search_taxon_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List[OntologyTermResult]:
+        """Search NCBI Taxonomy terms."""
+        return self._get_db_methods().search_taxon_terms(
+            term=term, exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
+
+    def search_sequence_terms(
+        self, term: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20
+    ) -> List[OntologyTermResult]:
+        """Search Sequence Ontology terms."""
+        return self._get_db_methods().search_sequence_terms(
+            term=term, exact_match=exact_match, include_synonyms=include_synonyms, limit=limit
+        )
 
     # Expression annotation methods with data source routing
     def get_expression_annotations(
@@ -893,6 +1018,74 @@ class AGRCurationAPIClient:
         """
         return self._get_db_methods().get_data_providers()
 
+    def get_reference(self, identifier: str, include_obsolete: bool = False) -> Optional[ReferenceResult]:
+        """Get a curation database reference by AGRKB CURIE, PMID, DOI, MOD ID, or short citation."""
+        return self._get_db_methods().get_reference(identifier=identifier, include_obsolete=include_obsolete)
+
+    def search_references(
+        self,
+        query: str,
+        exact_match: bool = False,
+        include_obsolete: bool = False,
+        limit: int = 20,
+    ) -> List[ReferenceResult]:
+        """Search curation database references by AGRKB CURIE, cross reference, or short citation."""
+        return self._get_db_methods().search_references(
+            query=query,
+            exact_match=exact_match,
+            include_obsolete=include_obsolete,
+            limit=limit,
+        )
+
+    def get_literature_reference(self, identifier: str) -> Optional[ReferenceResult]:
+        """Get a literature database reference by AGRKB CURIE, PMID, DOI, MOD ID, or title."""
+        return self._get_db_methods().get_literature_reference(identifier=identifier)
+
+    def search_literature_references(
+        self,
+        query: str,
+        exact_match: bool = False,
+        limit: int = 20,
+    ) -> List[ReferenceResult]:
+        """Search literature database references by AGRKB CURIE, cross reference, or title."""
+        return self._get_db_methods().search_literature_references(
+            query=query,
+            exact_match=exact_match,
+            limit=limit,
+        )
+
+    def get_vocabulary_term(
+        self,
+        vocabulary: str,
+        term: str,
+        include_obsolete: bool = False,
+    ) -> Optional[VocabularyTermResult]:
+        """Get a curation database vocabulary term by vocabulary and name/abbreviation/synonym."""
+        return self._get_db_methods().get_vocabulary_term(
+            vocabulary=vocabulary,
+            term=term,
+            include_obsolete=include_obsolete,
+        )
+
+    def search_vocabulary_terms(
+        self,
+        term: Optional[str] = None,
+        vocabulary: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        include_obsolete: bool = False,
+        limit: int = 20,
+    ) -> List[VocabularyTermResult]:
+        """Search curation database vocabulary terms."""
+        return self._get_db_methods().search_vocabulary_terms(
+            term=term,
+            vocabulary=vocabulary,
+            exact_match=exact_match,
+            include_synonyms=include_synonyms,
+            include_obsolete=include_obsolete,
+            limit=limit,
+        )
+
     # Disease annotation methods (DB only)
     def get_disease_annotations(self, taxon: str) -> List[Dict[str, str]]:
         """Get disease annotations from the database.
@@ -1002,9 +1195,7 @@ class AGRCurationAPIClient:
         """
         return self._get_db_methods().search_atp_topics(topic=topic, mod_abbr=mod_abbr, limit=limit)
 
-    def filter_atp_by_mod_subset(
-        self, curies: List[str], mod_abbr: str
-    ) -> List[str]:
+    def filter_atp_by_mod_subset(self, curies: List[str], mod_abbr: str) -> List[str]:
         """Filter ATP curies to only those in a MOD's subset.
 
         Args:
@@ -1014,9 +1205,7 @@ class AGRCurationAPIClient:
         Returns:
             List of CURIEs from the input that are in the MOD's subset
         """
-        return self._get_db_methods().filter_atp_by_mod_subset(
-            curies=curies, mod_abbr=mod_abbr
-        )
+        return self._get_db_methods().filter_atp_by_mod_subset(curies=curies, mod_abbr=mod_abbr)
 
     def get_atp_descendants(self, ancestor_curie: str, direct_children_only: bool = False) -> List[Dict[str, str]]:
         """Get descendants of an ATP ontology term.
@@ -1036,8 +1225,9 @@ class AGRCurationAPIClient:
             # Get only direct children
             children = client.get_atp_descendants('ATP:0000002', direct_children_only=True)
         """
-        return self._get_db_methods().get_atp_descendants(ancestor_curie=ancestor_curie,
-                                                          direct_children_only=direct_children_only)
+        return self._get_db_methods().get_atp_descendants(
+            ancestor_curie=ancestor_curie, direct_children_only=direct_children_only
+        )
 
     def search_ontology_ancestors_or_descendants(self, ontology_node: str, direction: str = "descendants") -> List[str]:
         """Get ancestors or descendants of an ontology node.

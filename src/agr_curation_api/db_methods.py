@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, text, bindparam
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import ValidationError
 
-from .models import Gene, Allele, OntologyTermResult, DiseaseAnnotation
+from .models import Gene, Allele, OntologyTermResult, DiseaseAnnotation, ReferenceResult, VocabularyTermResult
 from .exceptions import AGRAPIError
 
 logger = logging.getLogger(__name__)
@@ -118,8 +118,7 @@ class DatabaseMethods:
             AND"""
             )
 
-            sql_query = text(
-                f"""
+            sql_query = text(f"""
             SELECT
                 be.primaryexternalid as "primaryExternalId",
                 slota.displaytext as geneSymbol
@@ -134,8 +133,7 @@ class DatabaseMethods:
                 taxon.curie = :species_taxon
             ORDER BY
                 be.primaryexternalid
-            """
-            )
+            """)
 
             # Add pagination if specified
             if limit is not None:
@@ -184,8 +182,7 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 be.primaryexternalid as geneId,
                 slota.displaytext as geneSymbol
@@ -203,8 +200,7 @@ class DatabaseMethods:
                 taxon.curie = :species_taxon
             ORDER BY
                 be.primaryexternalid
-            """
-            )
+            """)
 
             # Add pagination if specified
             if limit is not None:
@@ -242,8 +238,7 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             # Query to get complete gene information
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 be.primaryexternalid,
                 be.curie,
@@ -274,8 +269,7 @@ class DatabaseMethods:
             WHERE
                 be.primaryexternalid = :gene_id
             LIMIT 1
-            """
-            )
+            """)
 
             row = session.execute(sql_query, {"gene_id": gene_id}).fetchone()
 
@@ -359,8 +353,7 @@ class DatabaseMethods:
         try:
             if wb_extraction_subset:
                 # Special query for WB allele extraction
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT
                     be.primaryexternalid,
                     sa.displaytext
@@ -382,8 +375,7 @@ class DatabaseMethods:
                 AND ot.curie = 'NCBITaxon:6239'
                 ORDER BY
                     be.primaryexternalid
-                """
-                )
+                """)
 
                 # Add pagination if specified
                 if limit is not None:
@@ -394,8 +386,7 @@ class DatabaseMethods:
                 rows = session.execute(sql_query).fetchall()
             else:
                 # Standard allele query
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT
                     be.primaryexternalid as "primaryExternalId",
                     slota.displaytext as alleleSymbol
@@ -414,8 +405,7 @@ class DatabaseMethods:
                     taxon.curie = :taxon_curie
                 ORDER BY
                     be.primaryexternalid
-                """
-                )
+                """)
 
                 # Add pagination if specified
                 if limit is not None:
@@ -464,8 +454,7 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 be.primaryexternalid as alleleId,
                 slota.displaytext as alleleSymbol
@@ -484,8 +473,7 @@ class DatabaseMethods:
                 taxon.curie = :taxon_curie
             ORDER BY
                 be.primaryexternalid
-            """
-            )
+            """)
 
             # Add pagination if specified
             if limit is not None:
@@ -524,8 +512,7 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             # Query to get complete allele information
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 be.primaryexternalid,
                 be.curie,
@@ -552,8 +539,7 @@ class DatabaseMethods:
             WHERE
                 be.primaryexternalid = :allele_id
             LIMIT 1
-            """
-            )
+            """)
 
             row = session.execute(sql_query, {"allele_id": allele_id}).fetchone()
 
@@ -608,8 +594,7 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 be.primaryexternalid geneId,
                 slota.displaytext geneSymbol,
@@ -631,8 +616,7 @@ class DatabaseMethods:
             AND
                 ot.curie <> 'WBbt:0000100'
             AND ot_taxon.curie = :taxon_id
-            """
-            )
+            """)
             rows = session.execute(sql_query, {"taxon_id": taxon_curie}).fetchall()
             return [{"gene_id": row[0], "gene_symbol": row[1], "anatomy_id": row[2]} for row in rows]
         except Exception as e:
@@ -655,8 +639,7 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT DISTINCT
                 otp.curie parentCurie,
                 otp.name parentName,
@@ -676,8 +659,7 @@ class DatabaseMethods:
                 otpc.distance = 1
             AND
                 otpc.closuretypes in ('["part_of"]', '["is_a"]')
-            """
-            )
+            """)
             rows = session.execute(sql_query, {"curieprefix": f"{curie_prefix}%"}).fetchall()
             return [
                 {
@@ -711,8 +693,7 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 s.displayName, t.curie
             FROM
@@ -723,12 +704,354 @@ class DatabaseMethods:
                 s.obsolete = false
             AND
                 s.assembly_curie is not null
-            """
-            )
+            """)
             rows = session.execute(sql_query).fetchall()
             return [(row[0], row[1]) for row in rows]
         except Exception as e:
             raise AGRAPIError(f"Database query failed: {str(e)}")
+        finally:
+            session.close()
+
+    # Reference methods
+    def get_reference(self, identifier: str, include_obsolete: bool = False) -> Optional[ReferenceResult]:
+        """Get a curation database reference by AGRKB CURIE, PMID, DOI, MOD ID, or short citation."""
+        results = self.search_references(
+            query=identifier,
+            exact_match=True,
+            include_obsolete=include_obsolete,
+            limit=1,
+        )
+        return results[0] if results else None
+
+    def search_references(
+        self,
+        query: str,
+        exact_match: bool = False,
+        include_obsolete: bool = False,
+        limit: int = 20,
+    ) -> List[ReferenceResult]:
+        """Search curation database references by AGRKB CURIE, cross reference, or short citation.
+
+        This targets the curation database schema:
+        informationcontententity -> reference plus reference_crossreference.
+        For richer title metadata, use search_literature_references() against a
+        literature database connection.
+        """
+        query = query.strip()
+        if not query:
+            return []
+
+        session = self._create_session()
+        try:
+            query_upper = query.upper()
+            query_like_upper = f"%{query_upper}%"
+
+            exact_filter = """
+                ice.curie = :query
+                OR ice.curie = :query_upper
+                OR UPPER(ice.curie) = :query_upper
+                OR cr.referencedcurie = :query
+                OR cr.referencedcurie = :query_upper
+                OR UPPER(cr.referencedcurie) = :query_upper
+                OR cr.displayname = :query
+                OR cr.displayname = :query_upper
+                OR UPPER(cr.displayname) = :query_upper
+                OR UPPER(r.shortcitation) = :query_upper
+            """
+            fuzzy_filter = """
+                UPPER(ice.curie) LIKE :query_like_upper
+                OR UPPER(cr.referencedcurie) LIKE :query_like_upper
+                OR UPPER(cr.displayname) LIKE :query_like_upper
+                OR UPPER(r.shortcitation) LIKE :query_like_upper
+            """
+            match_filter = exact_filter if exact_match else fuzzy_filter
+            visibility_filter = "AND ice.internal = false"
+            if not include_obsolete:
+                visibility_filter += " AND ice.obsolete = false"
+
+            sql_query = text(f"""
+            SELECT
+                ice.id,
+                ice.curie,
+                r.shortcitation,
+                ice.obsolete,
+                ARRAY_AGG(DISTINCT COALESCE(cr.referencedcurie, cr.displayname))
+                    FILTER (WHERE COALESCE(cr.referencedcurie, cr.displayname) IS NOT NULL) AS cross_references
+            FROM
+                informationcontententity ice
+                JOIN reference r ON r.id = ice.id
+                LEFT JOIN reference_crossreference rc ON rc.reference_id = ice.id
+                LEFT JOIN crossreference cr ON cr.id = rc.crossreferences_id
+                    AND cr.internal = false
+                    AND cr.obsolete = false
+            WHERE
+                ({match_filter})
+                {visibility_filter}
+            GROUP BY
+                ice.id, ice.curie, r.shortcitation, ice.obsolete
+            ORDER BY
+                CASE
+                    WHEN UPPER(ice.curie) = :query_upper THEN 0
+                    WHEN BOOL_OR(UPPER(cr.referencedcurie) = :query_upper) THEN 1
+                    WHEN UPPER(r.shortcitation) = :query_upper THEN 2
+                    ELSE 3
+                END,
+                ice.id DESC
+            LIMIT :limit
+            """)
+
+            rows = session.execute(
+                sql_query,
+                {
+                    "query": query,
+                    "query_upper": query_upper,
+                    "query_like_upper": query_like_upper,
+                    "limit": limit,
+                },
+            ).fetchall()
+            return [
+                ReferenceResult(
+                    reference_id=row[0],
+                    curie=row[1],
+                    short_citation=row[2],
+                    cross_references=row[4] or [],
+                    source="curation_db",
+                    obsolete=row[3],
+                )
+                for row in rows
+            ]
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for references: {str(e)}")
+        finally:
+            session.close()
+
+    def get_literature_reference(self, identifier: str) -> Optional[ReferenceResult]:
+        """Get a literature database reference by AGRKB CURIE, PMID, DOI, MOD ID, or title."""
+        results = self.search_literature_references(query=identifier, exact_match=True, limit=1)
+        return results[0] if results else None
+
+    def search_literature_references(
+        self,
+        query: str,
+        exact_match: bool = False,
+        limit: int = 20,
+    ) -> List[ReferenceResult]:
+        """Search literature database references by AGRKB CURIE, cross reference, or title.
+
+        This targets the AGR Literature database schema:
+        reference plus cross_reference.
+        """
+        query = query.strip()
+        if not query:
+            return []
+
+        session = self._create_session()
+        try:
+            query_upper = query.upper()
+            query_like_upper = f"%{query_upper}%"
+
+            exact_filter = """
+                r.curie = :query
+                OR r.curie = :query_upper
+                OR UPPER(r.curie) = :query_upper
+                OR cr.curie = :query
+                OR cr.curie = :query_upper
+                OR UPPER(cr.curie) = :query_upper
+                OR UPPER(r.title) = :query_upper
+            """
+            fuzzy_filter = """
+                UPPER(r.curie) LIKE :query_like_upper
+                OR UPPER(cr.curie) LIKE :query_like_upper
+                OR UPPER(r.title) LIKE :query_like_upper
+            """
+            match_filter = exact_filter if exact_match else fuzzy_filter
+
+            sql_query = text(f"""
+            SELECT
+                r.reference_id,
+                r.curie,
+                r.title,
+                ARRAY_AGG(DISTINCT cr.curie) FILTER (WHERE cr.curie IS NOT NULL) AS cross_references
+            FROM
+                reference r
+                LEFT JOIN cross_reference cr ON cr.reference_id = r.reference_id
+                    AND cr.is_obsolete = false
+            WHERE
+                ({match_filter})
+            GROUP BY
+                r.reference_id, r.curie, r.title
+            ORDER BY
+                CASE
+                    WHEN UPPER(r.curie) = :query_upper THEN 0
+                    WHEN BOOL_OR(UPPER(cr.curie) = :query_upper) THEN 1
+                    WHEN UPPER(r.title) = :query_upper THEN 2
+                    ELSE 3
+                END,
+                r.reference_id DESC
+            LIMIT :limit
+            """)
+
+            rows = session.execute(
+                sql_query,
+                {
+                    "query": query,
+                    "query_upper": query_upper,
+                    "query_like_upper": query_like_upper,
+                    "limit": limit,
+                },
+            ).fetchall()
+            return [
+                ReferenceResult(
+                    reference_id=row[0],
+                    curie=row[1],
+                    title=row[2],
+                    cross_references=row[3] or [],
+                    source="literature_db",
+                )
+                for row in rows
+            ]
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for literature references: {str(e)}")
+        finally:
+            session.close()
+
+    # Controlled vocabulary methods
+    def get_vocabulary_term(
+        self,
+        vocabulary: str,
+        term: str,
+        include_obsolete: bool = False,
+    ) -> Optional[VocabularyTermResult]:
+        """Get a curation database vocabulary term by vocabulary and name/abbreviation/synonym."""
+        results = self.search_vocabulary_terms(
+            term=term,
+            vocabulary=vocabulary,
+            exact_match=True,
+            include_obsolete=include_obsolete,
+            limit=1,
+        )
+        return results[0] if results else None
+
+    def search_vocabulary_terms(
+        self,
+        term: Optional[str] = None,
+        vocabulary: Optional[str] = None,
+        exact_match: bool = False,
+        include_synonyms: bool = True,
+        include_obsolete: bool = False,
+        limit: int = 20,
+    ) -> List[VocabularyTermResult]:
+        """Search curation database vocabulary terms.
+
+        Args:
+            term: Term name, abbreviation, or synonym to search for.
+            vocabulary: Optional vocabulary name/label filter.
+            exact_match: If True, term and vocabulary matching are exact.
+            include_synonyms: Include vocabularyterm_synonyms in term matching.
+            include_obsolete: Include obsolete terms.
+            limit: Maximum number of terms to return.
+        """
+        term = term.strip() if term else None
+        vocabulary = vocabulary.strip() if vocabulary else None
+
+        if not term and not vocabulary:
+            return []
+
+        session = self._create_session()
+        try:
+            clauses = ["vt.internal = false", "v.internal = false", "v.obsolete = false"]
+            params: Dict[str, Any] = {"limit": limit}
+
+            if term:
+                term_upper = term.upper()
+                params["term_upper"] = term_upper
+                params["term_like_upper"] = f"%{term_upper}%"
+                if exact_match:
+                    term_clause = """
+                        UPPER(vt.name) = :term_upper
+                        OR UPPER(vt.abbreviation) = :term_upper
+                    """
+                    if include_synonyms:
+                        term_clause += " OR UPPER(vts.synonyms) = :term_upper"
+                else:
+                    term_clause = """
+                        UPPER(vt.name) LIKE :term_like_upper
+                        OR UPPER(vt.abbreviation) LIKE :term_like_upper
+                    """
+                    if include_synonyms:
+                        term_clause += " OR UPPER(vts.synonyms) LIKE :term_like_upper"
+                clauses.append(f"({term_clause})")
+
+            if vocabulary:
+                vocabulary_upper = vocabulary.upper()
+                params["vocabulary_upper"] = vocabulary_upper
+                params["vocabulary_like_upper"] = f"%{vocabulary_upper}%"
+                if exact_match:
+                    clauses.append("""
+                        (
+                            UPPER(v.name) = :vocabulary_upper
+                            OR UPPER(v.vocabularylabel) = :vocabulary_upper
+                        )
+                        """)
+                else:
+                    clauses.append("""
+                        (
+                            UPPER(v.name) LIKE :vocabulary_like_upper
+                            OR UPPER(v.vocabularylabel) LIKE :vocabulary_like_upper
+                        )
+                        """)
+
+            if not include_obsolete:
+                clauses.append("vt.obsolete = false")
+
+            where_clause = " AND ".join(clauses)
+
+            sql_query = text(f"""
+            SELECT
+                vt.id,
+                v.name,
+                v.vocabularylabel,
+                vt.name,
+                vt.abbreviation,
+                vt.definition,
+                vt.obsolete,
+                ARRAY_AGG(DISTINCT vts.synonyms) FILTER (WHERE vts.synonyms IS NOT NULL) AS synonyms
+            FROM
+                vocabularyterm vt
+                JOIN vocabulary v ON v.id = vt.vocabulary_id
+                LEFT JOIN vocabularyterm_synonyms vts ON vts.vocabularyterm_id = vt.id
+            WHERE
+                {where_clause}
+            GROUP BY
+                vt.id, v.name, v.vocabularylabel, vt.name, vt.abbreviation, vt.definition, vt.obsolete
+            ORDER BY
+                CASE
+                    WHEN :term_upper IS NOT NULL AND UPPER(vt.name) = :term_upper THEN 0
+                    WHEN :term_upper IS NOT NULL AND UPPER(vt.abbreviation) = :term_upper THEN 1
+                    ELSE 2
+                END,
+                v.name,
+                vt.name
+            LIMIT :limit
+            """)
+
+            params.setdefault("term_upper", None)
+            rows = session.execute(sql_query, params).fetchall()
+            return [
+                VocabularyTermResult(
+                    id=row[0],
+                    vocabulary=row[1],
+                    vocabulary_label=row[2],
+                    name=row[3],
+                    abbreviation=row[4],
+                    definition=row[5],
+                    obsolete=row[6],
+                    synonyms=row[7] or [],
+                )
+                for row in rows
+            ]
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for vocabulary terms: {str(e)}")
         finally:
             session.close()
 
@@ -754,8 +1077,7 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             # Combined query using UNION to get all disease annotations in one go
-            union_query = text(
-                """
+            union_query = text("""
                 -- Direct gene -> DO term annotations
                 SELECT
                     be.primaryexternalid AS "geneId",
@@ -905,8 +1227,7 @@ class DatabaseMethods:
                 AND rel.name = 'is_implicated_in'
                 AND slota_subject.obsolete = false
                 AND be_subject.obsolete = false
-            """
-            )
+            """)
 
             # Execute the combined query
             rows = session.execute(union_query, {"taxon_id": taxon_curie}).mappings().all()
@@ -954,8 +1275,7 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 subj_be.primaryexternalid AS gene_id,
                 subj_slota.displaytext AS gene_symbol,
@@ -982,8 +1302,7 @@ class DatabaseMethods:
               AND subj_be.obsolete = false
               AND obj_be.obsolete = false
             GROUP BY gto.subjectgene_id, gto.objectgene_id, subj_be.primaryexternalid, subj_slota.displaytext, obj_be.primaryexternalid, obj_slota.displaytext, obj_full_name_slota.displaytext
-            """
-            )
+            """)
             rows = session.execute(sql_query, {"taxon_curie": taxon_curie}).mappings().all()
 
             from collections import defaultdict
@@ -1035,8 +1354,7 @@ class DatabaseMethods:
             entity_names_upper = [name.upper() for name in entity_names]
 
             if entity_type == "gene":
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singlegene_id
@@ -1048,11 +1366,9 @@ class DatabaseMethods:
                 )
                 AND UPPER(sa.displaytext) IN :entity_name_list
                 AND ot.curie = :taxon
-                """
-                )
+                """)
             elif entity_type == "allele":
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleallele_id
@@ -1060,11 +1376,9 @@ class DatabaseMethods:
                 WHERE sa.slotannotationtype = 'AlleleSymbolSlotAnnotation'
                 AND UPPER(sa.displaytext) IN :entity_name_list
                 AND ot.curie = :taxon
-                """
-                )
+                """)
             elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT be.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleagm_id
@@ -1076,22 +1390,18 @@ class DatabaseMethods:
                 )
                 AND UPPER(sa.displaytext) IN :entity_name_list
                 AND ot.curie = :taxon
-                """
-                )
+                """)
             elif "targeting reagent" in entity_type:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, str.name
                 FROM biologicalentity be
                 JOIN sequencetargetingreagent str ON be.id = str.id
                 JOIN ontologyterm ot ON be.taxon_id = ot.id
                 WHERE UPPER(str.name) IN :entity_name_list
                 AND ot.curie = :taxon
-                """
-                )
+                """)
             elif entity_type == "construct":
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT r.primaryexternalid, sa.obsolete, sa.displaytext
                 FROM reagent r
                 JOIN slotannotation sa ON r.id = sa.singleconstruct_id
@@ -1100,8 +1410,7 @@ class DatabaseMethods:
                     'ConstructSymbolSlotAnnotation'
                 )
                 AND UPPER(sa.displaytext) IN :entity_name_list
-                """
-                )
+                """)
                 rows = session.execute(sql_query, {"entity_name_list": tuple(entity_names_upper)}).fetchall()
                 return [{"entity_curie": row[0], "is_obsolete": row[1], "entity": row[2]} for row in rows]
             else:
@@ -1282,8 +1591,7 @@ class DatabaseMethods:
         else:
             return []
 
-        sql_query = text(
-            f"""
+        sql_query = text(f"""
             SELECT DISTINCT ON (be.primaryexternalid)
                 be.primaryexternalid,
                 sa.obsolete,
@@ -1300,8 +1608,7 @@ class DatabaseMethods:
             AND sa.{entity_id_field} IS NOT NULL
             AND ot.curie = :taxon
             ORDER BY be.primaryexternalid, sa.displaytext
-        """
-        )
+        """)
 
         rows = session.execute(sql_query, {"search_exact": search_upper, "taxon": taxon_curie}).fetchall()
 
@@ -1366,8 +1673,7 @@ class DatabaseMethods:
         else:
             exclude_clause = ""
 
-        sql_query = text(
-            f"""
+        sql_query = text(f"""
             SELECT DISTINCT ON (be.primaryexternalid)
                 be.primaryexternalid,
                 sa.obsolete,
@@ -1387,8 +1693,7 @@ class DatabaseMethods:
             {exclude_clause}
             ORDER BY be.primaryexternalid, sa.displaytext
             LIMIT :limit
-        """
-        )
+        """)
 
         params = {
             "search_starts": f"{search_upper}%",
@@ -1460,8 +1765,7 @@ class DatabaseMethods:
             exclude_clause = ""
 
         # Use MATERIALIZED CTE to force displaytext lookup first
-        sql_query = text(
-            f"""
+        sql_query = text(f"""
             WITH matching_slots AS MATERIALIZED (
                 SELECT
                     sa.{entity_id_field},
@@ -1488,8 +1792,7 @@ class DatabaseMethods:
             {exclude_clause}
             ORDER BY be.primaryexternalid, ms.displaytext
             LIMIT :limit
-        """
-        )
+        """)
 
         params = {
             "search_contains": f"%{search_upper}%",
@@ -1527,8 +1830,7 @@ class DatabaseMethods:
 
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 ot.curie,
                 ot.name,
@@ -1546,8 +1848,7 @@ class DatabaseMethods:
                 ot.obsolete = false
             GROUP BY
                 ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
-            """
-            )
+            """)
 
             row = session.execute(sql_query, {"curie": curie}).fetchone()
 
@@ -1593,8 +1894,7 @@ class DatabaseMethods:
 
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 ot.curie,
                 ot.name,
@@ -1612,8 +1912,7 @@ class DatabaseMethods:
                 ot.obsolete = false
             GROUP BY
                 ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
-            """
-            )
+            """)
 
             rows = session.execute(sql_query, {"curies": curies}).fetchall()
 
@@ -1742,8 +2041,7 @@ class DatabaseMethods:
         """
 
         if include_synonyms:
-            sql_query = text(
-                """
+            sql_query = text("""
                 WITH matching_terms AS (
                     SELECT DISTINCT ot.id, ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
                     FROM ontologyterm ot
@@ -1765,11 +2063,9 @@ class DatabaseMethods:
                 LEFT JOIN synonym s ON ots.synonyms_id = s.id
                 GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
                 ORDER BY mt.name
-            """
-            )
+            """)
         else:
-            sql_query = text(
-                """
+            sql_query = text("""
                 SELECT
                     ot.curie,
                     ot.name,
@@ -1782,8 +2078,7 @@ class DatabaseMethods:
                 AND ot.obsolete = false
                 AND UPPER(ot.name) = :search_exact
                 ORDER BY ot.name
-            """
-            )
+            """)
 
         rows = session.execute(sql_query, {"search_exact": search_upper, "ontology_type": ontology_type}).fetchall()
 
@@ -1832,8 +2127,7 @@ class DatabaseMethods:
             exclude_clause = ""
 
         if include_synonyms:
-            sql_query = text(
-                f"""
+            sql_query = text(f"""
                 WITH matching_terms AS (
                     SELECT DISTINCT ot.id, ot.curie, ot.name, ot.namespace, ot.definition, ot.ontologytermtype
                     FROM ontologyterm ot
@@ -1858,11 +2152,9 @@ class DatabaseMethods:
                 LEFT JOIN synonym s ON ots.synonyms_id = s.id
                 GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
                 ORDER BY mt.name
-            """
-            )
+            """)
         else:
-            sql_query = text(
-                f"""
+            sql_query = text(f"""
                 SELECT
                     ot.curie,
                     ot.name,
@@ -1878,8 +2170,7 @@ class DatabaseMethods:
                 {exclude_clause}
                 ORDER BY ot.name
                 LIMIT :limit
-            """
-            )
+            """)
 
         params = {
             "search_starts": f"{search_upper}%",
@@ -1937,8 +2228,7 @@ class DatabaseMethods:
             else:
                 exclude_clause = ""
 
-            sql_query = text(
-                f"""
+            sql_query = text(f"""
                 WITH matching_terms AS MATERIALIZED (
                     SELECT DISTINCT
                         ot.id,
@@ -1970,8 +2260,7 @@ class DatabaseMethods:
                 GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
                 ORDER BY mt.name
                 LIMIT :limit
-            """
-            )
+            """)
         else:
             # Build exclusion clause for direct query (use ot.curie since no CTE)
             if exclude_curies:
@@ -1979,8 +2268,7 @@ class DatabaseMethods:
             else:
                 exclude_clause = ""
 
-            sql_query = text(
-                f"""
+            sql_query = text(f"""
                 SELECT
                     ot.curie,
                     ot.name,
@@ -1996,8 +2284,7 @@ class DatabaseMethods:
                 {exclude_clause}
                 ORDER BY ot.name
                 LIMIT :limit
-            """
-            )
+            """)
 
         params = {
             "search_contains": f"%{search_upper}%",
@@ -2412,41 +2699,33 @@ class DatabaseMethods:
 
             if entity_type in ["gene", "allele"]:
                 entity_table_name = entity_type
-                sql_query = text(
-                    f"""
+                sql_query = text(f"""
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
                 FROM biologicalentity be, {entity_table_name} ent_tbl
                 WHERE be.id = ent_tbl.id
                 AND UPPER(be.primaryexternalid) IN :entity_curie_list
-                """
-                )
+                """)
             elif entity_type == "construct":
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT r.primaryexternalid, r.obsolete, r.primaryexternalid
                 FROM reagent r, construct c
                 WHERE r.id = c.id
                 AND UPPER(r.primaryexternalid) IN :entity_curie_list
-                """
-                )
+                """)
             elif entity_type in ["agm", "agms", "strain", "genotype", "fish"]:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
                 FROM biologicalentity be, affectedgenomicmodel agm
                 WHERE be.id = agm.id
                 AND UPPER(be.primaryexternalid) IN :entity_curie_list
-                """
-                )
+                """)
             elif "targeting reagent" in entity_type:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT be.primaryexternalid, be.obsolete, be.primaryexternalid
                 FROM biologicalentity be, sequencetargetingreagent str
                 WHERE be.id = str.id
                 AND UPPER(be.primaryexternalid) IN :entity_curie_list
-                """
-                )
+                """)
             else:
                 raise AGRAPIError(f"Unknown entity_type '{entity_type}'")
 
@@ -2480,54 +2759,44 @@ class DatabaseMethods:
             category = category.lower()
 
             if category == "gene":
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT be.primaryexternalid, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singlegene_id
                 WHERE be.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'GeneSymbolSlotAnnotation'
-                """
-                )
+                """)
             elif "allele" in category:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT be.primaryexternalid, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleallele_id
                 WHERE be.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'AlleleSymbolSlotAnnotation'
-                """
-                )
+                """)
             elif category in ["affected genome model", "agm", "strain", "genotype", "fish"]:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT be.primaryexternalid, sa.displaytext
                 FROM biologicalentity be
                 JOIN slotannotation sa ON be.id = sa.singleagm_id
                 WHERE be.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'AgmFullNameSlotAnnotation'
-                """
-                )
+                """)
             elif "construct" in category:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT r.primaryexternalid, sa.displaytext
                 FROM reagent r
                 JOIN slotannotation sa ON r.id = sa.singleconstruct_id
                 WHERE r.primaryexternalid IN :curies
                 AND sa.slotannotationtype = 'ConstructSymbolSlotAnnotation'
-                """
-                )
+                """)
             elif category in ["species", "ecoterm"]:
                 curies_upper = [curie.upper() for curie in curies]
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT curie, name
                 FROM ontologyterm
                 WHERE UPPER(curie) IN :curies
-                """
-                )
+                """)
                 rows = session.execute(sql_query, {"curies": tuple(curies_upper)}).fetchall()
                 return {row[0]: row[1] for row in rows}
             else:
@@ -2563,8 +2832,7 @@ class DatabaseMethods:
         try:
             if topic and mod_abbr:
                 search_query = f"%{topic.upper()}%"
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT ot.curie, ot.name
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -2576,8 +2844,7 @@ class DatabaseMethods:
                 AND ancestor.curie = :topic_category_atp
                 AND s.subsets = :mod_abbr
                 LIMIT :limit
-                """
-                )
+                """)
                 rows = session.execute(
                     sql_query,
                     {
@@ -2589,8 +2856,7 @@ class DatabaseMethods:
                 ).fetchall()
             elif topic:
                 search_query = f"%{topic.upper()}%"
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT ot.curie, ot.name
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -2600,14 +2866,12 @@ class DatabaseMethods:
                 AND ot.obsolete = false
                 AND ancestor.curie = :topic_category_atp
                 LIMIT :limit
-                """
-                )
+                """)
                 rows = session.execute(
                     sql_query, {"search_query": search_query, "topic_category_atp": TOPIC_CATEGORY_ATP, "limit": limit}
                 ).fetchall()
             elif mod_abbr:
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT ot.curie, ot.name
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -2616,8 +2880,7 @@ class DatabaseMethods:
                 WHERE ot.ontologytermtype = 'ATPTerm'
                 AND ancestor.curie = :topic_category_atp
                 AND s.subsets = :mod_abbr
-                """
-                )
+                """)
                 rows = session.execute(
                     sql_query, {"topic_category_atp": TOPIC_CATEGORY_ATP, "mod_abbr": f"{mod_abbr}_tag"}
                 ).fetchall()
@@ -2631,9 +2894,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def filter_atp_by_mod_subset(
-        self, curies: List[str], mod_abbr: str
-    ) -> List[str]:
+    def filter_atp_by_mod_subset(self, curies: List[str], mod_abbr: str) -> List[str]:
         """Filter ATP curies to only those in a MOD's subset.
 
         Checks the ontologyterm_subsets table for each curie to see if it
@@ -2650,16 +2911,14 @@ class DatabaseMethods:
             return []
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
                 SELECT DISTINCT ot.curie
                 FROM ontologyterm ot
                 JOIN ontologyterm_subsets s ON ot.id = s.ontologyterm_id
                 WHERE ot.ontologytermtype = 'ATPTerm'
                 AND UPPER(ot.curie) IN :curies
                 AND s.subsets = :mod_tag
-                """
-            ).bindparams(bindparam("curies", expanding=True))
+                """).bindparams(bindparam("curies", expanding=True))
             rows = session.execute(
                 sql_query,
                 {
@@ -2694,8 +2953,7 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             distance_filter = "AND otc.distance = 1" if direct_children_only else ""
-            sql_query = text(
-                f"""
+            sql_query = text(f"""
             SELECT DISTINCT ot.curie, ot.name
             FROM ontologyterm ot
             JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
@@ -2704,8 +2962,7 @@ class DatabaseMethods:
             AND ot.obsolete = false
             AND ancestor.curie = :ancestor_curie
             {distance_filter}
-            """
-            )
+            """)
             rows = session.execute(sql_query, {"ancestor_curie": ancestor_curie}).fetchall()
             return [{"curie": row[0], "name": row[1]} for row in rows]
 
@@ -2730,27 +2987,23 @@ class DatabaseMethods:
         session = self._create_session()
         try:
             if direction == "descendants":
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT ot.curie
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
                 JOIN ontologyterm ancestor ON ancestor.id = otc.closureobject_id
                 WHERE ancestor.curie = :ontology_node
                 AND ot.obsolete = False
-                """
-                )
+                """)
             else:  # ancestors
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT DISTINCT ot.curie
                 FROM ontologyterm ot
                 JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
                 JOIN ontologyterm descendant ON descendant.id = otc.closureobject_id
                 WHERE descendant.curie = :ontology_node
                 AND ot.obsolete = False
-                """
-                )
+                """)
 
             rows = session.execute(sql_query, {"ontology_node": ontology_node}).fetchall()
             return [row[0] for row in rows]
@@ -2778,26 +3031,22 @@ class DatabaseMethods:
         try:
             if species.upper().startswith("NCBITAXON"):
                 search_query = f"{species.upper()}%"
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT curie, name
                 FROM ontologyterm
                 WHERE ontologytermtype = 'NCBITaxonTerm'
                 AND UPPER(curie) LIKE :search_query
                 LIMIT :limit
-                """
-                )
+                """)
             else:
                 search_query = f"%{species.upper()}%"
-                sql_query = text(
-                    """
+                sql_query = text("""
                 SELECT curie, name
                 FROM ontologyterm
                 WHERE ontologytermtype = 'NCBITaxonTerm'
                 AND UPPER(name) LIKE :search_query
                 LIMIT :limit
-                """
-                )
+                """)
 
             rows = session.execute(sql_query, {"search_query": search_query, "limit": limit}).fetchall()
             return [{"curie": row[0], "name": row[1]} for row in rows]
@@ -2830,8 +3079,7 @@ class DatabaseMethods:
         """
         session = self._create_session()
         try:
-            sql_query = text(
-                """
+            sql_query = text("""
             SELECT
                 da.id,
                 da.curie as annotation_curie,
@@ -2869,8 +3117,7 @@ class DatabaseMethods:
               AND da.internal = false
               AND be.primaryexternalid = :gene_id
             ORDER BY da.id
-            """
-            )
+            """)
 
             rows = session.execute(sql_query, {"gene_id": gene_id}).fetchall()
 
@@ -2950,9 +3197,7 @@ class DatabaseMethods:
             allele_anns = self.get_disease_annotations_by_taxon(
                 taxon_curie, "allele", limit, offset, include_evidence_codes
             )
-            agm_anns = self.get_disease_annotations_by_taxon(
-                taxon_curie, "agm", limit, offset, include_evidence_codes
-            )
+            agm_anns = self.get_disease_annotations_by_taxon(taxon_curie, "agm", limit, offset, include_evidence_codes)
             return gene_anns + allele_anns + agm_anns
 
         session = self._create_session()
@@ -2976,9 +3221,7 @@ class DatabaseMethods:
                     evidence_codes = self._get_disease_annotation_evidence_codes(session, row[0])
 
                 try:
-                    annotation = self._build_disease_annotation_from_row(
-                        row, annotation_type, evidence_codes
-                    )
+                    annotation = self._build_disease_annotation_from_row(row, annotation_type, evidence_codes)
                     annotations.append(annotation)
                 except ValidationError as e:
                     logger.warning(f"Failed to parse disease annotation {row[0]}: {e}")
@@ -3083,8 +3326,7 @@ class DatabaseMethods:
                 limit_clause = "LIMIT :limit_val"
                 params["limit_val"] = limit
 
-            sql_query = text(
-                f"""
+            sql_query = text(f"""
             SELECT
                 da.id,
                 da.curie as annotation_curie,
@@ -3110,8 +3352,7 @@ class DatabaseMethods:
               {type_filter}
             ORDER BY da.id
             {limit_clause}
-            """
-            )
+            """)
 
             rows = session.execute(sql_query, params).fetchall()
 
@@ -3144,9 +3385,7 @@ class DatabaseMethods:
         finally:
             session.close()
 
-    def _get_disease_annotation_evidence_codes(
-        self, session: Session, annotation_id: int
-    ) -> List[str]:
+    def _get_disease_annotation_evidence_codes(self, session: Session, annotation_id: int) -> List[str]:
         """Get evidence codes for a disease annotation.
 
         Args:
@@ -3156,20 +3395,16 @@ class DatabaseMethods:
         Returns:
             List of ECO CURIEs
         """
-        sql_query = text(
-            """
+        sql_query = text("""
         SELECT ot.curie
         FROM diseaseannotation_ontologyterm dao
         JOIN ontologyterm ot ON ot.id = dao.evidencecodes_id
         WHERE dao.diseaseannotation_id = :annotation_id
-        """
-        )
+        """)
         rows = session.execute(sql_query, {"annotation_id": annotation_id}).fetchall()
         return [row[0] for row in rows]
 
-    def _build_gene_disease_query(
-        self, limit: Optional[int] = None, offset: Optional[int] = None
-    ) -> tuple[Any, dict]:
+    def _build_gene_disease_query(self, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[Any, dict]:
         """Build SQL query for gene disease annotations.
 
         Returns:
@@ -3187,8 +3422,7 @@ class DatabaseMethods:
             offset_clause = "OFFSET :offset_val"
             params["offset_val"] = offset
 
-        query = text(
-            f"""
+        query = text(f"""
         SELECT
             da.id,
             da.curie as annotation_curie,
@@ -3229,8 +3463,7 @@ class DatabaseMethods:
         ORDER BY da.id
         {limit_clause}
         {offset_clause}
-        """
-        )
+        """)
         return query, params
 
     def _build_allele_disease_query(
@@ -3253,8 +3486,7 @@ class DatabaseMethods:
             offset_clause = "OFFSET :offset_val"
             params["offset_val"] = offset
 
-        query = text(
-            f"""
+        query = text(f"""
         SELECT
             da.id,
             da.curie as annotation_curie,
@@ -3295,13 +3527,10 @@ class DatabaseMethods:
         ORDER BY da.id
         {limit_clause}
         {offset_clause}
-        """
-        )
+        """)
         return query, params
 
-    def _build_agm_disease_query(
-        self, limit: Optional[int] = None, offset: Optional[int] = None
-    ) -> tuple[Any, dict]:
+    def _build_agm_disease_query(self, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[Any, dict]:
         """Build SQL query for AGM disease annotations.
 
         Returns:
@@ -3319,8 +3548,7 @@ class DatabaseMethods:
             offset_clause = "OFFSET :offset_val"
             params["offset_val"] = offset
 
-        query = text(
-            f"""
+        query = text(f"""
         SELECT
             da.id,
             da.curie as annotation_curie,
@@ -3360,8 +3588,7 @@ class DatabaseMethods:
         ORDER BY da.id
         {limit_clause}
         {offset_clause}
-        """
-        )
+        """)
         return query, params
 
     def _build_disease_annotation_from_row(

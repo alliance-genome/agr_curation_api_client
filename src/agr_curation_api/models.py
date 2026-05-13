@@ -346,6 +346,41 @@ class OntologyTermResult(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class ReferenceResult(BaseModel):
+    """Reference result from database search.
+
+    This compact model is intentionally shared by curation-DB and
+    literature-DB helpers so validation tools can resolve a reference from an
+    AGRKB CURIE, PMID, DOI, MOD reference ID, title, or short citation without
+    needing to know which backing database supplied the metadata.
+    """
+
+    reference_id: Optional[int] = Field(None, description="Internal database reference ID")
+    curie: Optional[str] = Field(None, description="AGRKB reference CURIE")
+    title: Optional[str] = Field(None, description="Reference title when available")
+    short_citation: Optional[str] = Field(None, description="Short citation when available")
+    cross_references: List[str] = Field(default_factory=list, description="PMID/DOI/MOD cross references")
+    source: str = Field(..., description="Backing database source, such as curation_db or literature_db")
+    obsolete: Optional[bool] = Field(None, description="Whether the reference is obsolete when known")
+
+    model_config = ConfigDict(extra="allow")
+
+
+class VocabularyTermResult(BaseModel):
+    """Vocabulary term result from curation database search."""
+
+    id: int = Field(..., description="Internal vocabularyterm ID")
+    vocabulary: str = Field(..., description="Vocabulary name")
+    vocabulary_label: Optional[str] = Field(None, description="Vocabulary display label")
+    name: str = Field(..., description="Canonical vocabulary term name")
+    abbreviation: Optional[str] = Field(None, description="Vocabulary term abbreviation")
+    definition: Optional[str] = Field(None, description="Vocabulary term definition")
+    obsolete: bool = Field(False, description="Whether the vocabulary term is obsolete")
+    synonyms: List[str] = Field(default_factory=list, description="Vocabulary term synonyms")
+
+    model_config = ConfigDict(extra="allow")
+
+
 class ExpressionAnnotation(BaseModel):
     """Expression annotation model from A-Team curation API."""
 
@@ -404,9 +439,7 @@ class DiseaseAnnotation(BaseModel):
 
     # Subject (the entity being annotated)
     subject_id: Optional[str] = Field(None, description="Subject identifier (gene/allele/AGM CURIE)")
-    subject_type: Optional[str] = Field(
-        None, description="Subject type: 'gene', 'allele', or 'agm'"
-    )
+    subject_type: Optional[str] = Field(None, description="Subject type: 'gene', 'allele', or 'agm'")
     subject_symbol: Optional[str] = Field(None, description="Subject symbol for display")
     subject_taxon: Optional[str] = Field(None, description="Subject taxon CURIE")
 
@@ -422,56 +455,32 @@ class DiseaseAnnotation(BaseModel):
     negated: bool = Field(False, description="Whether this annotation is negated")
 
     # Evidence
-    reference_curie: Optional[str] = Field(
-        None, description="Reference CURIE (PMID or AGRKB identifier)"
-    )
-    evidence_codes: Optional[List[str]] = Field(
-        default_factory=list, description="ECO evidence code CURIEs"
-    )
+    reference_curie: Optional[str] = Field(None, description="Reference CURIE (PMID or AGRKB identifier)")
+    evidence_codes: Optional[List[str]] = Field(default_factory=list, description="ECO evidence code CURIEs")
 
     # Data provenance
-    data_provider: Optional[str] = Field(
-        None, description="Source MOD abbreviation (WB, FB, MGI, etc.)"
-    )
+    data_provider: Optional[str] = Field(None, description="Source MOD abbreviation (WB, FB, MGI, etc.)")
 
     # Optional qualifiers
     genetic_sex: Optional[str] = Field(None, description="Genetic sex qualifier")
     annotation_type: Optional[str] = Field(
         None, description="Annotation type (manually_curated, high_throughput, etc.)"
     )
-    disease_qualifiers: Optional[List[str]] = Field(
-        default_factory=list, description="Disease qualifier terms"
-    )
+    disease_qualifiers: Optional[List[str]] = Field(default_factory=list, description="Disease qualifier terms")
 
     # Inferred entities (for allele/AGM annotations)
-    inferred_gene_id: Optional[str] = Field(
-        None, description="Inferred gene ID for allele/AGM annotations"
-    )
-    inferred_allele_id: Optional[str] = Field(
-        None, description="Inferred allele ID for AGM annotations"
-    )
+    inferred_gene_id: Optional[str] = Field(None, description="Inferred gene ID for allele/AGM annotations")
+    inferred_allele_id: Optional[str] = Field(None, description="Inferred allele ID for AGM annotations")
 
     # Asserted entities (manually curated associations)
-    asserted_gene_ids: Optional[List[str]] = Field(
-        default_factory=list, description="Manually asserted gene IDs"
-    )
-    asserted_allele_ids: Optional[List[str]] = Field(
-        default_factory=list, description="Manually asserted allele IDs"
-    )
+    asserted_gene_ids: Optional[List[str]] = Field(default_factory=list, description="Manually asserted gene IDs")
+    asserted_allele_ids: Optional[List[str]] = Field(default_factory=list, description="Manually asserted allele IDs")
 
     # Genetic modifiers
-    modifier_gene_ids: Optional[List[str]] = Field(
-        default_factory=list, description="Genetic modifier gene IDs"
-    )
-    modifier_allele_ids: Optional[List[str]] = Field(
-        default_factory=list, description="Genetic modifier allele IDs"
-    )
-    modifier_agm_ids: Optional[List[str]] = Field(
-        default_factory=list, description="Genetic modifier AGM IDs"
-    )
-    modifier_relation: Optional[str] = Field(
-        None, description="How modifiers affect the disease model"
-    )
+    modifier_gene_ids: Optional[List[str]] = Field(default_factory=list, description="Genetic modifier gene IDs")
+    modifier_allele_ids: Optional[List[str]] = Field(default_factory=list, description="Genetic modifier allele IDs")
+    modifier_agm_ids: Optional[List[str]] = Field(default_factory=list, description="Genetic modifier AGM IDs")
+    modifier_relation: Optional[str] = Field(None, description="How modifiers affect the disease model")
 
     # With/from (for ISS/ISO evidence codes)
     with_gene_ids: Optional[List[str]] = Field(
@@ -479,9 +488,7 @@ class DiseaseAnnotation(BaseModel):
     )
 
     # SGD-specific
-    sgd_strain_background_id: Optional[str] = Field(
-        None, description="SGD strain background AGM ID"
-    )
+    sgd_strain_background_id: Optional[str] = Field(None, description="SGD strain background AGM ID")
 
     # Audit fields
     date_created: Optional[datetime] = Field(None, description="Date annotation was created")
