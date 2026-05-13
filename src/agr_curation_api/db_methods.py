@@ -7,6 +7,7 @@ adapted from agr_genedescriptions/pipelines/alliance/ateam_db_helper.py
 from __future__ import annotations
 
 import logging
+import re
 from os import environ
 from typing import List, Optional, Dict, Any, Set
 from sqlalchemy.engine import Engine
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 # Constants for entity and topic mapping (from agr_literature_service ateam_db_helpers)
 CURIE_PREFIX_LIST = ["FB", "MGI", "RGD", "SGD", "WB", "XenBase", "ZFIN"]
 TOPIC_CATEGORY_ATP = "ATP:0000002"
+
+# Prefixes recognized as cross-reference identifiers in the literature ES index.
+_LITERATURE_XREF_PREFIXES = {
+    "PMID", "PMCID", "DOI",
+    "AGR", "AGRKB",
+    "FB", "MGI", "RGD", "SGD", "WB", "WORMBASE", "XB", "XENBASE", "ZFIN",
+}
+_AGRKB_CURIE_RE = re.compile(r"^AGR(?:KB)?:", re.IGNORECASE)
 
 
 class DatabaseConfig:
@@ -42,18 +51,47 @@ class DatabaseConfig:
         return f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
 
 
+class LiteratureESConfig:
+    """Configuration for the literature Elasticsearch endpoint.
+
+    Reads ``ELASTICSEARCH_HOST`` / ``ELASTICSEARCH_PORT`` / ``ELASTICSEARCH_INDEX``
+    from the environment. The host is the AGR VPC OpenSearch domain that mirrors
+    the literature database via Debezium.
+    """
+
+    def __init__(self) -> None:
+        self.host = environ.get("ELASTICSEARCH_HOST", "")
+        self.port = int(environ.get("ELASTICSEARCH_PORT", "443") or 443)
+        self.index = environ.get("ELASTICSEARCH_INDEX", "references_index")
+        # Allow callers to force scheme; otherwise default to https on 443.
+        scheme = environ.get("ELASTICSEARCH_SCHEME", "").lower()
+        if scheme in {"http", "https"}:
+            self.use_ssl = scheme == "https"
+        else:
+            self.use_ssl = self.port == 443
+
+
 class DatabaseMethods:
     """Direct database access methods for AGR entities."""
 
-    def __init__(self, config: Optional[DatabaseConfig] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[DatabaseConfig] = None,
+        literature_es_config: Optional[LiteratureESConfig] = None,
+    ) -> None:
         """Initialize database methods.
 
         Args:
             config: Database configuration (defaults to environment variables)
+            literature_es_config: Literature Elasticsearch configuration used by
+                the literature reference search helpers (defaults to environment
+                variables).
         """
         self.config = config or DatabaseConfig()
+        self.literature_es_config = literature_es_config or LiteratureESConfig()
         self._engine: Optional[Engine] = None
         self._session_factory: Optional[sessionmaker[Session]] = None
+        self._literature_es_client: Optional[Any] = None
 
     def _get_engine(self) -> Engine:
         """Get or create database engine.
@@ -79,6 +117,37 @@ class DatabaseMethods:
         """Create a new database session."""
         session_factory = self._get_session_factory()
         return session_factory()
+
+    def _get_literature_es_client(self) -> Any:
+        """Get or create the literature Elasticsearch client.
+
+        Raises:
+            AGRAPIError: if ``ELASTICSEARCH_HOST`` is not configured or the
+                ``elasticsearch`` package is unavailable.
+        """
+        if self._literature_es_client is not None:
+            return self._literature_es_client
+
+        cfg = self.literature_es_config
+        if not cfg.host:
+            raise AGRAPIError(
+                "Literature Elasticsearch is not configured: set ELASTICSEARCH_HOST"
+            )
+        try:
+            from elasticsearch import Elasticsearch
+        except ImportError as exc:
+            raise AGRAPIError(
+                "elasticsearch package is required for literature reference search"
+            ) from exc
+
+        scheme = "https" if cfg.use_ssl else "http"
+        self._literature_es_client = Elasticsearch(
+            hosts=[f"{scheme}://{cfg.host}:{cfg.port}"],
+            timeout=30,
+            max_retries=3,
+            retry_on_timeout=True,
+        )
+        return self._literature_es_client
 
     def get_genes_by_taxon(
         self,
@@ -826,7 +895,10 @@ class DatabaseMethods:
             session.close()
 
     def get_literature_reference(self, identifier: str) -> Optional[ReferenceResult]:
-        """Get a literature database reference by AGRKB CURIE, PMID, DOI, MOD ID, or title."""
+        """Get a literature reference by AGRKB CURIE, PMID, DOI, MOD ID, or title.
+
+        Backed by the literature Elasticsearch index.
+        """
         results = self.search_literature_references(query=identifier, exact_match=True, limit=1)
         return results[0] if results else None
 
@@ -836,84 +908,234 @@ class DatabaseMethods:
         exact_match: bool = False,
         limit: int = 20,
     ) -> List[ReferenceResult]:
-        """Search literature database references by AGRKB CURIE, cross reference, or title.
+        """Search literature references via Elasticsearch.
 
-        This targets the AGR Literature database schema:
-        reference plus cross_reference.
+        Queries the literature ``references_index`` on the AGR VPC OpenSearch
+        cluster, preserving the semantics of the previous SQL-backed helpers:
+
+        - AGRKB CURIEs are matched against ``curie.keyword``.
+        - Cross references (PMID, DOI, MOD IDs) are matched against
+          ``cross_references.curie.keyword``; hits whose only matching
+          cross-reference is obsolete are dropped client-side, because the
+          index stores ``cross_references`` as a flat object and the
+          ``curie`` / ``is_obsolete`` correlation is lost at query time.
+        - Free text is matched against ``title`` only.
+
+        The ``.keyword`` subfields use a lowercase + asciifolding normalizer
+        in the index mapping, so identifier matching is already
+        case-insensitive without any client-side normalization.
+
+        Args:
+            query: Identifier or free-text query.
+            exact_match: If ``True``, require an exact (whole-value or
+                whole-phrase) match; otherwise allow partial substring
+                matches on identifiers and phrase matches on the title.
+            limit: Maximum number of hits to return.
         """
         query = query.strip()
         if not query:
             return []
 
-        session = self._create_session()
+        es = self._get_literature_es_client()
+        is_xref_curie = self._looks_like_curie(query) and not bool(_AGRKB_CURIE_RE.match(query))
+
+        # Over-fetch when we will need to drop hits whose matching xref is
+        # obsolete-only, so we can still honour the caller's ``limit``.
+        fetch_size = limit
+        if is_xref_curie:
+            fetch_size = max(limit * 4, 20)
+
+        body = self._build_literature_es_query(query, exact_match=exact_match, limit=fetch_size)
+
         try:
-            query_upper = query.upper()
-            query_like_upper = f"%{query_upper}%"
-
-            exact_filter = """
-                r.curie = :query
-                OR r.curie = :query_upper
-                OR UPPER(r.curie) = :query_upper
-                OR cr.curie = :query
-                OR cr.curie = :query_upper
-                OR UPPER(cr.curie) = :query_upper
-                OR UPPER(r.title) = :query_upper
-            """
-            fuzzy_filter = """
-                UPPER(r.curie) LIKE :query_like_upper
-                OR UPPER(cr.curie) LIKE :query_like_upper
-                OR UPPER(r.title) LIKE :query_like_upper
-            """
-            match_filter = exact_filter if exact_match else fuzzy_filter
-
-            sql_query = text(f"""
-            SELECT
-                r.reference_id,
-                r.curie,
-                r.title,
-                ARRAY_AGG(DISTINCT cr.curie) FILTER (WHERE cr.curie IS NOT NULL) AS cross_references
-            FROM
-                reference r
-                LEFT JOIN cross_reference cr ON cr.reference_id = r.reference_id
-                    AND cr.is_obsolete = false
-            WHERE
-                ({match_filter})
-            GROUP BY
-                r.reference_id, r.curie, r.title
-            ORDER BY
-                CASE
-                    WHEN UPPER(r.curie) = :query_upper THEN 0
-                    WHEN BOOL_OR(UPPER(cr.curie) = :query_upper) THEN 1
-                    WHEN UPPER(r.title) = :query_upper THEN 2
-                    ELSE 3
-                END,
-                r.reference_id DESC
-            LIMIT :limit
-            """)
-
-            rows = session.execute(
-                sql_query,
-                {
-                    "query": query,
-                    "query_upper": query_upper,
-                    "query_like_upper": query_like_upper,
-                    "limit": limit,
-                },
-            ).fetchall()
-            return [
-                ReferenceResult(
-                    reference_id=row[0],
-                    curie=row[1],
-                    title=row[2],
-                    cross_references=row[3] or [],
-                    source="literature_db",
-                )
-                for row in rows
-            ]
+            res = es.search(index=self.literature_es_config.index, body=body)
         except Exception as e:
-            raise AGRAPIError(f"Database query failed for literature references: {str(e)}")
-        finally:
-            session.close()
+            raise AGRAPIError(f"Elasticsearch query failed for literature references: {str(e)}")
+
+        results: List[ReferenceResult] = []
+        for hit in res.get("hits", {}).get("hits", []):
+            source = hit.get("_source", {}) or {}
+            cross_refs_raw = source.get("cross_references") or []
+
+            if is_xref_curie and not self._xref_has_non_obsolete_match(
+                cross_refs_raw, query, exact_match=exact_match
+            ):
+                continue
+
+            cross_refs: List[str] = []
+            for xref in cross_refs_raw:
+                if isinstance(xref, dict):
+                    curie = xref.get("curie")
+                    if curie and not self._is_obsolete(xref.get("is_obsolete")):
+                        cross_refs.append(curie)
+                elif isinstance(xref, str):
+                    cross_refs.append(xref)
+
+            results.append(
+                ReferenceResult(
+                    reference_id=None,
+                    curie=source.get("curie"),
+                    title=source.get("title"),
+                    short_citation=source.get("citation"),
+                    cross_references=cross_refs,
+                    source="literature_es",
+                )
+            )
+            if len(results) >= limit:
+                break
+        return results
+
+    @staticmethod
+    def _is_obsolete(value: Any) -> bool:
+        """Coerce the ES ``is_obsolete`` value (string or bool) to a bool."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() == "true"
+        return False
+
+    @classmethod
+    def _xref_has_non_obsolete_match(
+        cls,
+        cross_refs_raw: List[Any],
+        query: str,
+        exact_match: bool,
+    ) -> bool:
+        """Return True if at least one cross-reference matches ``query`` and is not obsolete.
+
+        Mirrors the old SQL ``cr.is_obsolete = false`` join filter, which
+        cannot be expressed in a single ES query because ``cross_references``
+        is indexed as a flat object rather than a ``nested`` type. ``query``
+        is compared case-insensitively; exact mode requires a whole-value
+        match, fuzzy mode is a substring match (parity with SQL ``LIKE``).
+        """
+        q = query.strip().lower()
+        for xref in cross_refs_raw:
+            if not isinstance(xref, dict):
+                continue
+            curie = (xref.get("curie") or "").strip().lower()
+            if not curie:
+                continue
+            matched = curie == q if exact_match else q in curie
+            if matched and not cls._is_obsolete(xref.get("is_obsolete")):
+                return True
+        return False
+
+    @staticmethod
+    def _looks_like_curie(query: str) -> bool:
+        """Return True if ``query`` looks like a literature CURIE."""
+        if ":" not in query:
+            return False
+        prefix = query.split(":", 1)[0].strip().upper()
+        return prefix in _LITERATURE_XREF_PREFIXES or bool(_AGRKB_CURIE_RE.match(query))
+
+    @classmethod
+    def _build_literature_es_query(
+        cls,
+        query: str,
+        exact_match: bool,
+        limit: int,
+    ) -> Dict[str, Any]:
+        """Build the ES request body for a literature reference search.
+
+        Identifier matches go to the curie ``.keyword`` subfields, which the
+        index's ``sortNormalizer`` makes case-insensitive at the term level;
+        wildcards bypass the normalizer, so wildcard patterns are lowercased
+        and metacharacters are escaped here. Free-text matches use two
+        complementary ``multi_match`` clauses over ``title`` / ``citation`` /
+        ``abstract``: a ``cross_fields`` clause that handles citation-style
+        chunks spanning fields, and a ``best_fields`` clause with
+        ``fuzziness: AUTO`` that recovers misspellings within a single
+        field. ``match_phrase`` on title plus curie-keyword wildcards round
+        out the free-text path with exact-phrase boosts and naked-identifier
+        fallbacks.
+        """
+        is_agrkb_curie = bool(_AGRKB_CURIE_RE.match(query))
+        is_xref_curie = cls._looks_like_curie(query) and not is_agrkb_curie
+
+        should: List[Dict[str, Any]] = []
+        # ES wildcard queries are not analyzed; the index ``.keyword`` subfields
+        # use a lowercase+asciifolding normalizer, so we must lowercase the
+        # wildcard value ourselves to keep matching case-insensitive. ``*`` and
+        # ``?`` from user input are escaped so they're treated as literals.
+        escaped = query.lower().replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
+        wildcard = f"*{escaped}*"
+
+        if exact_match:
+            should.append({"term": {"curie.keyword": {"value": query, "boost": 5.0}}})
+            should.append({"term": {"cross_references.curie.keyword": {"value": query, "boost": 4.0}}})
+            # ``title.keyword`` (with the index's lowercase normalizer) is the
+            # ES equivalent of the old SQL ``UPPER(title) = UPPER(:query)``
+            # check. Long titles past the keyword field's ``ignore_above: 256``
+            # are caught by the ``match_phrase`` fallback.
+            should.append({"term": {"title.keyword": {"value": query, "boost": 2.0}}})
+            should.append({"match_phrase": {"title": {"query": query, "boost": 1.0}}})
+        elif is_agrkb_curie:
+            should.append({"term": {"curie.keyword": {"value": query, "boost": 5.0}}})
+            should.append({"wildcard": {"curie.keyword": {"value": wildcard, "boost": 1.0}}})
+        elif is_xref_curie:
+            should.append(
+                {"term": {"cross_references.curie.keyword": {"value": query, "boost": 5.0}}}
+            )
+            should.append(
+                {"wildcard": {"cross_references.curie.keyword": {"value": wildcard, "boost": 1.0}}}
+            )
+        else:
+            # Typo-tolerant matching across the reference text fields. Required
+            # by the AI curation validators that resolve potentially garbled
+            # reference snippets extracted from papers. Two complementary
+            # multi_match clauses cover the two messy-input shapes:
+            #
+            # * ``cross_fields`` virtually concatenates title / citation /
+            #   abstract and matches tokens across them, which is the right
+            #   tool for citation-style chunks that span fields (e.g. author
+            #   name + title fragment + journal). ``minimum_should_match``
+            #   "3<80%" requires all tokens to match on short queries and
+            #   tolerates ~1 missing token on longer ones.
+            # * ``best_fields`` with ``fuzziness: AUTO`` handles typo'd queries
+            #   that fit inside a single field. ``cross_fields`` does not
+            #   support fuzziness, so we need the second clause to recover
+            #   misspellings.
+            #
+            # The ``match_phrase`` boost keeps clean exact-phrase title hits
+            # at the top, and the curie wildcards catch naked identifiers
+            # embedded in free text.
+            should.append(
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": ["title^3", "citation^2", "abstract"],
+                        "type": "cross_fields",
+                        "minimum_should_match": "3<80%",
+                    }
+                }
+            )
+            should.append(
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": ["title^3", "citation^2", "abstract"],
+                        "fuzziness": "AUTO",
+                        "operator": "and",
+                    }
+                }
+            )
+            should.append({"match_phrase": {"title": {"query": query, "boost": 5.0}}})
+            should.append({"wildcard": {"curie.keyword": {"value": wildcard, "boost": 1.0}}})
+            should.append(
+                {"wildcard": {"cross_references.curie.keyword": {"value": wildcard, "boost": 1.0}}}
+            )
+
+        return {
+            "size": limit,
+            "_source": [
+                "curie",
+                "title",
+                "citation",
+                "cross_references",
+            ],
+            "query": {"bool": {"should": should, "minimum_should_match": 1}},
+        }
 
     # Controlled vocabulary methods
     def get_vocabulary_term(
