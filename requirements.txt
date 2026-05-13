@@ -15,3 +15,8 @@ pyyaml>=6.0
 black>=23.0.0  # For code formatting
 
 agr_cognito_py==0.1.0
+
+# Literature Elasticsearch client.
+# Pinned to 7.13.x to match agr_literature_service: the 7.14+ and 8.x clients
+# send a versioned Content-Type header that AWS OpenSearch rejects with HTTP 406.
+elasticsearch>=7.13,<7.14

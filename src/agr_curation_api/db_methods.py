@@ -7,6 +7,7 @@ adapted from agr_genedescriptions/pipelines/alliance/ateam_db_helper.py
 from __future__ import annotations
 
 import logging
+import re
 from os import environ
 from typing import List, Optional, Dict, Any, Set
 from sqlalchemy.engine import Engine
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 # Constants for entity and topic mapping (from agr_literature_service ateam_db_helpers)
 CURIE_PREFIX_LIST = ["FB", "MGI", "RGD", "SGD", "WB", "XenBase", "ZFIN"]
 TOPIC_CATEGORY_ATP = "ATP:0000002"
+
+# Prefixes recognized as cross-reference identifiers in the literature ES index.
+_LITERATURE_XREF_PREFIXES = {
+    "PMID", "PMCID", "DOI",
+    "AGR", "AGRKB",
+    "FB", "MGI", "RGD", "SGD", "WB", "WORMBASE", "XB", "XENBASE", "ZFIN",
+}
+_AGRKB_CURIE_RE = re.compile(r"^AGR(?:KB)?:", re.IGNORECASE)
 
 
 class DatabaseConfig:
@@ -42,18 +51,47 @@ class DatabaseConfig:
         return f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
 
 
+class LiteratureESConfig:
+    """Configuration for the literature Elasticsearch endpoint.
+
+    Reads ``ELASTICSEARCH_HOST`` / ``ELASTICSEARCH_PORT`` / ``ELASTICSEARCH_INDEX``
+    from the environment. The host is the AGR VPC OpenSearch domain that mirrors
+    the literature database via Debezium.
+    """
+
+    def __init__(self) -> None:
+        self.host = environ.get("ELASTICSEARCH_HOST", "")
+        self.port = int(environ.get("ELASTICSEARCH_PORT", "443") or 443)
+        self.index = environ.get("ELASTICSEARCH_INDEX", "references_index")
+        # Allow callers to force scheme; otherwise default to https on 443.
+        scheme = environ.get("ELASTICSEARCH_SCHEME", "").lower()
+        if scheme in {"http", "https"}:
+            self.use_ssl = scheme == "https"
+        else:
+            self.use_ssl = self.port == 443
+
+
 class DatabaseMethods:
     """Direct database access methods for AGR entities."""
 
-    def __init__(self, config: Optional[DatabaseConfig] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[DatabaseConfig] = None,
+        literature_es_config: Optional[LiteratureESConfig] = None,
+    ) -> None:
         """Initialize database methods.
 
         Args:
             config: Database configuration (defaults to environment variables)
+            literature_es_config: Literature Elasticsearch configuration used by
+                the literature reference search helpers (defaults to environment
+                variables).
         """
         self.config = config or DatabaseConfig()
+        self.literature_es_config = literature_es_config or LiteratureESConfig()
         self._engine: Optional[Engine] = None
         self._session_factory: Optional[sessionmaker[Session]] = None
+        self._literature_es_client: Optional[Any] = None
 
     def _get_engine(self) -> Engine:
         """Get or create database engine.
@@ -79,6 +117,37 @@ class DatabaseMethods:
         """Create a new database session."""
         session_factory = self._get_session_factory()
         return session_factory()
+
+    def _get_literature_es_client(self) -> Any:
+        """Get or create the literature Elasticsearch client.
+
+        Raises:
+            AGRAPIError: if ``ELASTICSEARCH_HOST`` is not configured or the
+                ``elasticsearch`` package is unavailable.
+        """
+        if self._literature_es_client is not None:
+            return self._literature_es_client
+
+        cfg = self.literature_es_config
+        if not cfg.host:
+            raise AGRAPIError(
+                "Literature Elasticsearch is not configured: set ELASTICSEARCH_HOST"
+            )
+        try:
+            from elasticsearch import Elasticsearch
+        except ImportError as exc:
+            raise AGRAPIError(
+                "elasticsearch package is required for literature reference search"
+            ) from exc
+
+        scheme = "https" if cfg.use_ssl else "http"
+        self._literature_es_client = Elasticsearch(
+            hosts=[f"{scheme}://{cfg.host}:{cfg.port}"],
+            timeout=30,
+            max_retries=3,
+            retry_on_timeout=True,
+        )
+        return self._literature_es_client
 
     def get_genes_by_taxon(
         self,
@@ -826,7 +895,10 @@ class DatabaseMethods:
             session.close()
 
     def get_literature_reference(self, identifier: str) -> Optional[ReferenceResult]:
-        """Get a literature database reference by AGRKB CURIE, PMID, DOI, MOD ID, or title."""
+        """Get a literature reference by AGRKB CURIE, PMID, DOI, MOD ID, or title.
+
+        Backed by the literature Elasticsearch index.
+        """
         results = self.search_literature_references(query=identifier, exact_match=True, limit=1)
         return results[0] if results else None
 
@@ -836,84 +908,124 @@ class DatabaseMethods:
         exact_match: bool = False,
         limit: int = 20,
     ) -> List[ReferenceResult]:
-        """Search literature database references by AGRKB CURIE, cross reference, or title.
+        """Search literature references via Elasticsearch.
 
-        This targets the AGR Literature database schema:
-        reference plus cross_reference.
+        Queries the literature ``references_index`` on the AGR VPC OpenSearch
+        cluster. Supports the same identifier/title surface as the previous
+        SQL-backed implementation, plus typo-tolerant matching:
+
+        - AGRKB CURIEs are matched against ``curie.keyword``
+        - Cross references (PMID, DOI, MOD IDs) are matched against
+          ``cross_references.curie.keyword``
+        - Free text is matched against ``title`` and ``citation`` with
+          ``fuzziness: AUTO`` when ``exact_match`` is ``False``
+
+        Args:
+            query: Identifier or free-text query.
+            exact_match: If ``True``, require an exact match; otherwise allow
+                fuzzy / partial matches and rank by ES score.
+            limit: Maximum number of hits to return.
         """
         query = query.strip()
         if not query:
             return []
 
-        session = self._create_session()
+        es = self._get_literature_es_client()
+        body = self._build_literature_es_query(query, exact_match=exact_match, limit=limit)
+
         try:
-            query_upper = query.upper()
-            query_like_upper = f"%{query_upper}%"
-
-            exact_filter = """
-                r.curie = :query
-                OR r.curie = :query_upper
-                OR UPPER(r.curie) = :query_upper
-                OR cr.curie = :query
-                OR cr.curie = :query_upper
-                OR UPPER(cr.curie) = :query_upper
-                OR UPPER(r.title) = :query_upper
-            """
-            fuzzy_filter = """
-                UPPER(r.curie) LIKE :query_like_upper
-                OR UPPER(cr.curie) LIKE :query_like_upper
-                OR UPPER(r.title) LIKE :query_like_upper
-            """
-            match_filter = exact_filter if exact_match else fuzzy_filter
-
-            sql_query = text(f"""
-            SELECT
-                r.reference_id,
-                r.curie,
-                r.title,
-                ARRAY_AGG(DISTINCT cr.curie) FILTER (WHERE cr.curie IS NOT NULL) AS cross_references
-            FROM
-                reference r
-                LEFT JOIN cross_reference cr ON cr.reference_id = r.reference_id
-                    AND cr.is_obsolete = false
-            WHERE
-                ({match_filter})
-            GROUP BY
-                r.reference_id, r.curie, r.title
-            ORDER BY
-                CASE
-                    WHEN UPPER(r.curie) = :query_upper THEN 0
-                    WHEN BOOL_OR(UPPER(cr.curie) = :query_upper) THEN 1
-                    WHEN UPPER(r.title) = :query_upper THEN 2
-                    ELSE 3
-                END,
-                r.reference_id DESC
-            LIMIT :limit
-            """)
-
-            rows = session.execute(
-                sql_query,
-                {
-                    "query": query,
-                    "query_upper": query_upper,
-                    "query_like_upper": query_like_upper,
-                    "limit": limit,
-                },
-            ).fetchall()
-            return [
-                ReferenceResult(
-                    reference_id=row[0],
-                    curie=row[1],
-                    title=row[2],
-                    cross_references=row[3] or [],
-                    source="literature_db",
-                )
-                for row in rows
-            ]
+            res = es.search(index=self.literature_es_config.index, body=body)
         except Exception as e:
-            raise AGRAPIError(f"Database query failed for literature references: {str(e)}")
-        finally:
-            session.close()
+            raise AGRAPIError(f"Elasticsearch query failed for literature references: {str(e)}")
+
+        results: List[ReferenceResult] = []
+        for hit in res.get("hits", {}).get("hits", []):
+            source = hit.get("_source", {}) or {}
+            cross_refs_raw = source.get("cross_references") or []
+            cross_refs: List[str] = []
+            for xref in cross_refs_raw:
+                if isinstance(xref, dict):
+                    curie = xref.get("curie")
+                    if curie:
+                        cross_refs.append(curie)
+                elif isinstance(xref, str):
+                    cross_refs.append(xref)
+
+            results.append(
+                ReferenceResult(
+                    reference_id=None,
+                    curie=source.get("curie"),
+                    title=source.get("title"),
+                    short_citation=source.get("citation"),
+                    cross_references=cross_refs,
+                    source="literature_es",
+                )
+            )
+        return results
+
+    @staticmethod
+    def _looks_like_curie(query: str) -> bool:
+        """Return True if ``query`` looks like a literature CURIE."""
+        if ":" not in query:
+            return False
+        prefix = query.split(":", 1)[0].strip().upper()
+        return prefix in _LITERATURE_XREF_PREFIXES or bool(_AGRKB_CURIE_RE.match(query))
+
+    @classmethod
+    def _build_literature_es_query(
+        cls,
+        query: str,
+        exact_match: bool,
+        limit: int,
+    ) -> Dict[str, Any]:
+        """Build the ES request body for a literature reference search."""
+        is_agrkb_curie = bool(_AGRKB_CURIE_RE.match(query))
+        is_xref_curie = cls._looks_like_curie(query) and not is_agrkb_curie
+
+        should: List[Dict[str, Any]] = []
+
+        if exact_match:
+            should.append({"term": {"curie.keyword": query}})
+            should.append({"term": {"cross_references.curie.keyword": query}})
+            should.append({"match_phrase": {"title": {"query": query, "boost": 2.0}}})
+            should.append({"match_phrase": {"citation": query}})
+        else:
+            if is_agrkb_curie:
+                # AGRKB curies: exact + partial against the keyword field.
+                should.append({"term": {"curie.keyword": {"value": query, "boost": 4.0}}})
+                should.append({"wildcard": {"curie.keyword": f"*{query}*"}})
+            elif is_xref_curie:
+                should.append(
+                    {"term": {"cross_references.curie.keyword": {"value": query, "boost": 4.0}}}
+                )
+                should.append({"wildcard": {"cross_references.curie.keyword": f"*{query}*"}})
+            else:
+                # Free text: fuzzy multi_match across title + citation, plus a
+                # wildcard fallback on the curie fields so naked IDs still hit.
+                should.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": ["title^3", "citation^2", "abstract"],
+                            "fuzziness": "AUTO",
+                            "operator": "and",
+                        }
+                    }
+                )
+                should.append({"match_phrase": {"title": {"query": query, "boost": 5.0}}})
+                should.append({"wildcard": {"curie.keyword": f"*{query}*"}})
+                should.append({"wildcard": {"cross_references.curie.keyword": f"*{query}*"}})
+
+        return {
+            "size": limit,
+            "_source": [
+                "curie",
+                "title",
+                "citation",
+                "cross_references",
+            ],
+            "query": {"bool": {"should": should, "minimum_should_match": 1}},
+        }
 
     # Controlled vocabulary methods
     def get_vocabulary_term(
