@@ -1038,10 +1038,17 @@ class DatabaseMethods:
     ) -> Dict[str, Any]:
         """Build the ES request body for a literature reference search.
 
-        Mirrors the old SQL helper: identifier matches go to the curie
-        ``.keyword`` subfields (case-insensitive via the index normalizer),
-        and free-text matches go to ``title`` only — citation / abstract are
-        intentionally excluded to preserve parity with the SQL behaviour.
+        Identifier matches go to the curie ``.keyword`` subfields, which the
+        index's ``sortNormalizer`` makes case-insensitive at the term level;
+        wildcards bypass the normalizer, so wildcard patterns are lowercased
+        and metacharacters are escaped here. Free-text matches use two
+        complementary ``multi_match`` clauses over ``title`` / ``citation`` /
+        ``abstract``: a ``cross_fields`` clause that handles citation-style
+        chunks spanning fields, and a ``best_fields`` clause with
+        ``fuzziness: AUTO`` that recovers misspellings within a single
+        field. ``match_phrase`` on title plus curie-keyword wildcards round
+        out the free-text path with exact-phrase boosts and naked-identifier
+        fallbacks.
         """
         is_agrkb_curie = bool(_AGRKB_CURIE_RE.match(query))
         is_xref_curie = cls._looks_like_curie(query) and not is_agrkb_curie
