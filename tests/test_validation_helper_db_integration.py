@@ -21,6 +21,14 @@ def current_database(db: DatabaseMethods) -> str:
         session.close()
 
 
+def scalar_or_none(db: DatabaseMethods, query: str):
+    session = db._create_session()
+    try:
+        return session.execute(text(query)).scalar()
+    finally:
+        session.close()
+
+
 def test_curation_validation_helpers_against_live_curation_db():
     db = DatabaseMethods()
     if current_database(db) != "curation":
@@ -49,6 +57,19 @@ def test_curation_validation_helpers_against_live_curation_db():
     assert exact_reference.curie
     assert pmid in exact_reference.cross_references
 
+    obsolete_reference_curie = scalar_or_none(
+        db,
+        """
+        SELECT ice.curie
+        FROM informationcontententity ice
+        JOIN reference r ON r.id = ice.id
+        WHERE ice.obsolete = true
+        LIMIT 1
+        """,
+    )
+    if obsolete_reference_curie:
+        assert db.get_reference(obsolete_reference_curie) is None
+
 
 def test_literature_reference_helpers_against_live_literature_db():
     db = DatabaseMethods()
@@ -68,3 +89,22 @@ def test_literature_reference_helpers_against_live_literature_db():
     assert exact_reference.curie
     assert exact_reference.title
     assert pmid in exact_reference.cross_references
+
+    obsolete_only_xref = scalar_or_none(
+        db,
+        """
+        SELECT cr.curie
+        FROM cross_reference cr
+        WHERE cr.is_obsolete = true
+          AND cr.curie IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM cross_reference current_cr
+              WHERE current_cr.curie = cr.curie
+                AND current_cr.is_obsolete = false
+          )
+        LIMIT 1
+        """,
+    )
+    if obsolete_only_xref:
+        assert db.get_literature_reference(obsolete_only_xref) is None

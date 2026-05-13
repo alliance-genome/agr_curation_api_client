@@ -737,6 +737,7 @@ class DatabaseMethods:
         For richer title metadata, use search_literature_references() against a
         literature database connection.
         """
+        query = query.strip()
         if not query:
             return []
 
@@ -746,8 +747,14 @@ class DatabaseMethods:
             query_like_upper = f"%{query_upper}%"
 
             exact_filter = """
-                UPPER(ice.curie) = :query_upper
+                ice.curie = :query
+                OR ice.curie = :query_upper
+                OR UPPER(ice.curie) = :query_upper
+                OR cr.referencedcurie = :query
+                OR cr.referencedcurie = :query_upper
                 OR UPPER(cr.referencedcurie) = :query_upper
+                OR cr.displayname = :query
+                OR cr.displayname = :query_upper
                 OR UPPER(cr.displayname) = :query_upper
                 OR UPPER(r.shortcitation) = :query_upper
             """
@@ -758,7 +765,9 @@ class DatabaseMethods:
                 OR UPPER(r.shortcitation) LIKE :query_like_upper
             """
             match_filter = exact_filter if exact_match else fuzzy_filter
-            obsolete_filter = "" if include_obsolete else "AND ice.obsolete = false"
+            visibility_filter = "AND ice.internal = false"
+            if not include_obsolete:
+                visibility_filter += " AND ice.obsolete = false"
 
             sql_query = text(f"""
             SELECT
@@ -773,9 +782,11 @@ class DatabaseMethods:
                 JOIN reference r ON r.id = ice.id
                 LEFT JOIN reference_crossreference rc ON rc.reference_id = ice.id
                 LEFT JOIN crossreference cr ON cr.id = rc.crossreferences_id
+                    AND cr.internal = false
+                    AND cr.obsolete = false
             WHERE
                 ({match_filter})
-                {obsolete_filter}
+                {visibility_filter}
             GROUP BY
                 ice.id, ice.curie, r.shortcitation, ice.obsolete
             ORDER BY
@@ -792,6 +803,7 @@ class DatabaseMethods:
             rows = session.execute(
                 sql_query,
                 {
+                    "query": query,
                     "query_upper": query_upper,
                     "query_like_upper": query_like_upper,
                     "limit": limit,
@@ -829,6 +841,7 @@ class DatabaseMethods:
         This targets the AGR Literature database schema:
         reference plus cross_reference.
         """
+        query = query.strip()
         if not query:
             return []
 
@@ -838,7 +851,11 @@ class DatabaseMethods:
             query_like_upper = f"%{query_upper}%"
 
             exact_filter = """
-                UPPER(r.curie) = :query_upper
+                r.curie = :query
+                OR r.curie = :query_upper
+                OR UPPER(r.curie) = :query_upper
+                OR cr.curie = :query
+                OR cr.curie = :query_upper
                 OR UPPER(cr.curie) = :query_upper
                 OR UPPER(r.title) = :query_upper
             """
@@ -858,6 +875,7 @@ class DatabaseMethods:
             FROM
                 reference r
                 LEFT JOIN cross_reference cr ON cr.reference_id = r.reference_id
+                    AND cr.is_obsolete = false
             WHERE
                 ({match_filter})
             GROUP BY
@@ -876,6 +894,7 @@ class DatabaseMethods:
             rows = session.execute(
                 sql_query,
                 {
+                    "query": query,
                     "query_upper": query_upper,
                     "query_like_upper": query_like_upper,
                     "limit": limit,
@@ -932,12 +951,15 @@ class DatabaseMethods:
             include_obsolete: Include obsolete terms.
             limit: Maximum number of terms to return.
         """
+        term = term.strip() if term else None
+        vocabulary = vocabulary.strip() if vocabulary else None
+
         if not term and not vocabulary:
             return []
 
         session = self._create_session()
         try:
-            clauses = []
+            clauses = ["vt.internal = false", "v.internal = false", "v.obsolete = false"]
             params: Dict[str, Any] = {"limit": limit}
 
             if term:
