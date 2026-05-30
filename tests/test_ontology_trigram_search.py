@@ -271,6 +271,37 @@ class TestOntologyTrigramTier(unittest.TestCase):
         self.assertIn("%%> %(search_text)s", rendered)  # operator correctly escaped + bound param
         self.assertNotIn("%%%%>", rendered)  # not double-escaped
 
+    @patch("agr_curation_api.db_methods.DatabaseMethods._create_session")
+    def test_trigram_operator_escaping_in_no_synonyms_branch(self, mock_session_factory):
+        """The include_synonyms=False trigram branch uses the same %> operator and must
+        escape it correctly too. It renders identically to the synonym branch, but the
+        prior guard only drives the synonym path; assert the non-synonym path explicitly
+        to close the coverage boundary noted in review.
+        """
+        mock_session = MagicMock()
+        mock_session_factory.return_value = mock_session
+        mock_execute = MagicMock()
+        # exact, prefix, contains, trigram-query all empty (set_config has no fetchall).
+        mock_execute.fetchall.side_effect = [[], [], [], []]
+        mock_session.execute.return_value = mock_execute
+
+        self.db.search_ontology_terms(
+            term="ciliated neuron", ontology_type="WBBTTerm", include_synonyms=False, limit=20
+        )
+
+        calls = mock_session.execute.call_args_list
+        query_calls = [c for c in calls if "word_similarity(" in str(c.args[0])]
+        self.assertEqual(len(query_calls), 1, "expected exactly one trigram query execute")
+        q = query_calls[0]
+        sql_text = str(q.args[0])
+        self.assertIn("%> :search_text", sql_text)  # index-using operator predicate
+        self.assertNotIn("matched_ids", sql_text)  # confirms we're on the non-synonym (single-table) branch
+
+        # Same render-time escaping guard for the non-synonym branch.
+        rendered = str(q.args[0].compile(dialect=postgresql.psycopg2.dialect()))
+        self.assertIn("%%> %(search_text)s", rendered)
+        self.assertNotIn("%%%%>", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
