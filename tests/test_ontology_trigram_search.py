@@ -35,8 +35,10 @@ class TestOntologyTrigramTier(unittest.TestCase):
         mock_session_factory.return_value = mock_session
         mock_execute = MagicMock()
         # Tier order: exact, prefix, contains (all empty) -> trigram (one fuzzy hit).
-        # Trigram rows carry 8 columns: curie, name, namespace, definition, type,
-        # synonyms(array), name_score, synonym_score.
+        # The trigram tier issues an extra set_config() execute (no fetchall) to set the
+        # pg_trgm threshold before its query, so there are 5 execute() calls but only 4
+        # fetchall() results. Trigram rows carry 8 columns: curie, name, namespace,
+        # definition, type, synonyms(array), name_score, synonym_score.
         mock_execute.fetchall.side_effect = [
             [],  # Tier 1 exact
             [],  # Tier 2 prefix
@@ -60,8 +62,8 @@ class TestOntologyTrigramTier(unittest.TestCase):
             term="ciliated neuron", ontology_type="WBBTTerm", limit=20
         )
 
-        # All four tiers should have executed
-        self.assertEqual(mock_session.execute.call_count, 4)
+        # exact + prefix + contains + set_config + trigram-query = 5 execute() calls
+        self.assertEqual(mock_session.execute.call_count, 5)
         self.assertEqual(len(results), 1)
         r = results[0]
         self.assertIsInstance(r, OntologyTermResult)
@@ -215,30 +217,49 @@ class TestOntologyTrigramTier(unittest.TestCase):
         self.assertEqual(r.match_type, "trigram")
 
     @patch("agr_curation_api.db_methods.DatabaseMethods._create_session")
-    def test_trigram_sql_uses_word_similarity_and_bound_threshold(self, mock_session_factory):
-        """The generated Tier 4 SQL must call word_similarity() and bind the threshold.
+    def test_trigram_sql_uses_index_operator_and_guc_threshold(self, mock_session_factory):
+        """The generated Tier 4 SQL must use the index-accelerating %> operator and set the
+        pg_trgm threshold GUC, while still ranking by word_similarity().
 
         The other tiers are mocked, so this is the only guard against the Tier 4 query
-        silently regressing (e.g. losing word_similarity or the threshold param) without
-        a live database.
+        silently regressing back to the non-indexed function form, or losing the
+        threshold, without a live database.
         """
         mock_session = MagicMock()
         mock_session_factory.return_value = mock_session
         mock_execute = MagicMock()
-        mock_execute.fetchall.side_effect = [[], [], [], []]  # all four tiers empty
+        # exact, prefix, contains, then trigram-query all fetchall-empty (set_config does
+        # not call fetchall), so 4 fetchall results cover the 5 execute() calls.
+        mock_execute.fetchall.side_effect = [[], [], [], []]
         mock_session.execute.return_value = mock_execute
 
         self.db.search_ontology_terms(term="ciliated neuron", ontology_type="WBBTTerm", limit=20)
 
-        # The 4th execute call is the trigram tier.
-        self.assertEqual(mock_session.execute.call_count, 4)
-        trigram_call = mock_session.execute.call_args_list[3]
-        sql_text = str(trigram_call.args[0])
-        params = trigram_call.args[1]
-        self.assertIn("word_similarity", sql_text)
-        self.assertEqual(params["threshold"], 0.3)
-        self.assertEqual(params["search_text"], "CILIATED NEURON")
-        self.assertEqual(params["ontology_type"], "WBBTTerm")
+        # exact + prefix + contains + set_config + trigram-query
+        self.assertEqual(mock_session.execute.call_count, 5)
+        calls = mock_session.execute.call_args_list
+
+        # The set_config call binds the threshold transaction-locally.
+        set_config_calls = [c for c in calls if "set_config" in str(c.args[0])]
+        self.assertEqual(len(set_config_calls), 1, "expected exactly one set_config execute")
+        cfg = set_config_calls[0]
+        self.assertIn("pg_trgm.word_similarity_threshold", str(cfg.args[0]))
+        self.assertEqual(cfg.args[1]["wst"], "0.3")
+
+        # The trigram query uses the %> operator (single % in source; SQLAlchemy text()
+        # doubles it for psycopg2) for index acceleration, ranks by word_similarity(), and
+        # binds search params. Match the function-call form "word_similarity(" so the
+        # set_config call (whose GUC name "word_similarity_threshold" also contains the
+        # substring) is excluded.
+        query_calls = [c for c in calls if "word_similarity(" in str(c.args[0])]
+        self.assertEqual(len(query_calls), 1, "expected exactly one trigram query execute")
+        q = query_calls[0]
+        sql_text = str(q.args[0])
+        self.assertIn("%> :search_text", sql_text)  # index-using operator predicate
+        self.assertNotIn(">= :threshold", sql_text)  # must NOT use the non-indexed function filter
+        self.assertEqual(q.args[1]["search_text"], "CILIATED NEURON")
+        self.assertEqual(q.args[1]["ontology_type"], "WBBTTerm")
+        self.assertNotIn("threshold", q.args[1])  # threshold goes through the GUC, not a query param
 
 
 if __name__ == "__main__":
