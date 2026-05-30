@@ -2185,15 +2185,19 @@ class DatabaseMethods:
         Notes:
             - Case-insensitive search
             - Searches term names and synonyms (if enabled)
-            - Performance: Uses tiered search strategy (exact → prefix → contains)
+            - Performance: Uses tiered search strategy (exact → prefix → contains → trigram)
                 - Tier 1 (Exact): UPPER(name) = 'PATTERN' (uses B-tree index, 5-20ms)
                 - Tier 2 (Prefix): UPPER(name) LIKE 'PATTERN%' (uses B-tree index, 5-20ms)
                 - Tier 3 (Contains): UPPER(name) LIKE '%PATTERN%' (sequential scan, ~990ms)
+                - Tier 4 (Trigram): pg_trgm word_similarity() fuzzy match (GIN index)
             - Most queries hit Tier 1 or 2 (5-10x faster on average)
-            - Tier 3 fallback ensures comprehensive results
-
-            TODO - Future Enhancements:
-            - Phase 2 optimization: Add pg_trgm extension for 50-100x improvement (all queries 10-30ms)
+            - Tiers 3-4 only run when earlier tiers under-fill the result limit
+            - Tier 4 catches approximate matches (typos, word order, partial phrases
+              such as 'ciliated neuron' -> 'amphid ciliated sensory neuron') that
+              substring matching cannot reach. Trigram results carry match_score,
+              matched_field, and match_type='trigram' on the returned objects.
+            - Tier 4 requires the pg_trgm extension on the target database
+              (CREATE EXTENSION pg_trgm); a GIN trigram index on UPPER(name) keeps it fast.
         """
 
         if not term:
@@ -2236,6 +2240,19 @@ class DatabaseMethods:
                     session, search_upper, ontology_type, include_synonyms, exclude_curies, remaining_limit
                 )
                 results.extend(contains_results)
+
+                # If we have enough results, return early
+                if len(results) >= limit:
+                    return results[:limit]
+
+                # Tier 4: Trigram fuzzy match (pg_trgm) for approximate matches that
+                # substring matching cannot reach (typos, word order, partial phrases).
+                exclude_curies = {r.curie for r in results}
+                remaining_limit = limit - len(results)
+                trigram_results = self._search_ontology_trigram(
+                    session, search_upper, ontology_type, include_synonyms, exclude_curies, remaining_limit
+                )
+                results.extend(trigram_results)
 
             return results[:limit]
 
@@ -2312,6 +2329,7 @@ class DatabaseMethods:
                 definition=row[3],
                 ontology_type=row[4],
                 synonyms=row[5] or [],
+                match_type="exact",
             )
             for row in rows
         ]
@@ -2413,6 +2431,7 @@ class DatabaseMethods:
                 definition=row[3],
                 ontology_type=row[4],
                 synonyms=row[5] or [],
+                match_type="prefix",
             )
             for row in rows
         ]
@@ -2527,9 +2546,173 @@ class DatabaseMethods:
                 definition=row[3],
                 ontology_type=row[4],
                 synonyms=row[5] or [],
+                match_type="contains",
             )
             for row in rows
         ]
+
+    def _search_ontology_trigram(
+        self,
+        session: Session,
+        search_upper: str,
+        ontology_type: str,
+        include_synonyms: bool,
+        exclude_curies: Set[str],
+        limit: int,
+        threshold: float = 0.3,
+    ) -> List["OntologyTermResult"]:
+        """Tier 4: Trigram fuzzy match search for ontology terms (pg_trgm).
+
+        Uses pg_trgm's ``word_similarity()`` to surface approximate matches that the
+        exact/prefix/contains tiers miss: typos, word-order differences, and partial
+        phrases such as 'ciliated neuron' -> 'amphid ciliated sensory neuron'.
+
+        ``word_similarity(a, b)`` returns the greatest similarity (0-1) between the
+        trigram set of ``a`` and any contiguous extent of ``b``, so it tolerates extra
+        words in the term name/synonym. Both sides are upper-cased so matching is
+        case-insensitive and consistent with the other tiers.
+
+        Requires the pg_trgm extension on the target database
+        (``CREATE EXTENSION pg_trgm``). A GIN trigram index on
+        ``UPPER(ontologyterm.name)`` keeps this fast; without one PostgreSQL falls
+        back to a sequential scan.
+
+        The function form ``word_similarity(:q, ...)`` is used deliberately instead of
+        the ``%`` operator: the operator collides with psycopg2 parameter escaping and
+        depends on a session-level similarity threshold, whereas the function lets us
+        pass an explicit threshold parameter.
+
+        Args:
+            session: SQLAlchemy session
+            search_upper: Uppercase search pattern
+            ontology_type: Ontology term type
+            include_synonyms: Whether to include synonym matches
+            exclude_curies: Set of CURIEs to exclude (from earlier tiers)
+            limit: Maximum results to return
+            threshold: Minimum word_similarity score to include (default: 0.3)
+
+        Returns:
+            List of OntologyTermResult objects with ``match_score``, ``matched_field``,
+            and ``match_type='trigram'`` populated, ordered by descending similarity.
+        """
+
+        if include_synonyms:
+            if exclude_curies:
+                exclude_clause = "AND mt.curie NOT IN :exclude_curies"
+            else:
+                exclude_clause = ""
+
+            sql_query = text(f"""
+                WITH matching_terms AS MATERIALIZED (
+                    SELECT DISTINCT
+                        ot.id,
+                        ot.curie,
+                        ot.name,
+                        ot.namespace,
+                        ot.definition,
+                        ot.ontologytermtype
+                    FROM ontologyterm ot
+                    LEFT JOIN ontologyterm_synonym ots ON ot.id = ots.ontologyterm_id
+                    LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                    WHERE ot.ontologytermtype = :ontology_type
+                    AND ot.obsolete = false
+                    AND (
+                        word_similarity(:search_text, UPPER(ot.name)) >= :threshold
+                        OR word_similarity(:search_text, UPPER(s.name)) >= :threshold
+                    )
+                )
+                SELECT
+                    mt.curie,
+                    mt.name,
+                    mt.namespace,
+                    mt.definition,
+                    mt.ontologytermtype,
+                    ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL) as synonyms,
+                    word_similarity(:search_text, UPPER(mt.name)) as name_score,
+                    COALESCE(MAX(word_similarity(:search_text, UPPER(s.name))), 0) as synonym_score
+                FROM matching_terms mt
+                LEFT JOIN ontologyterm_synonym ots ON mt.id = ots.ontologyterm_id
+                LEFT JOIN synonym s ON ots.synonyms_id = s.id
+                WHERE true
+                {exclude_clause}
+                GROUP BY mt.curie, mt.name, mt.namespace, mt.definition, mt.ontologytermtype
+                ORDER BY GREATEST(
+                    word_similarity(:search_text, UPPER(mt.name)),
+                    COALESCE(MAX(word_similarity(:search_text, UPPER(s.name))), 0)
+                ) DESC, mt.name
+                LIMIT :limit
+            """)
+        else:
+            if exclude_curies:
+                exclude_clause = "AND ot.curie NOT IN :exclude_curies"
+            else:
+                exclude_clause = ""
+
+            sql_query = text(f"""
+                SELECT
+                    ot.curie,
+                    ot.name,
+                    ot.namespace,
+                    ot.definition,
+                    ot.ontologytermtype,
+                    ARRAY[]::text[] as synonyms,
+                    word_similarity(:search_text, UPPER(ot.name)) as name_score,
+                    0.0 as synonym_score
+                FROM ontologyterm ot
+                WHERE ot.ontologytermtype = :ontology_type
+                AND ot.obsolete = false
+                AND word_similarity(:search_text, UPPER(ot.name)) >= :threshold
+                {exclude_clause}
+                ORDER BY word_similarity(:search_text, UPPER(ot.name)) DESC, ot.name
+                LIMIT :limit
+            """)
+
+        params = {
+            "search_text": search_upper,
+            "ontology_type": ontology_type,
+            "threshold": threshold,
+            "limit": limit,
+        }
+        if exclude_curies:
+            params["exclude_curies"] = tuple(exclude_curies)
+
+        # Fail loud, but make a missing-extension failure self-diagnosing. This is the
+        # only tier that depends on pg_trgm; if the extension is absent, word_similarity
+        # raises an "undefined function" error that is otherwise opaque. We re-raise (no
+        # fallback) with an actionable hint.
+        try:
+            rows = session.execute(sql_query, params).fetchall()
+        except Exception as e:
+            raise AGRAPIError(
+                "Trigram (Tier 4) ontology search failed. The pg_trgm extension is "
+                "required on the target database (CREATE EXTENSION pg_trgm). "
+                f"Original error: {e}"
+            ) from e
+
+        results = []
+        for row in rows:
+            name_score = float(row[6]) if row[6] is not None else 0.0
+            synonym_score = float(row[7]) if row[7] is not None else 0.0
+            if synonym_score > name_score:
+                matched_field = "synonym"
+                match_score = synonym_score
+            else:
+                matched_field = "name"
+                match_score = name_score
+            results.append(
+                OntologyTermResult(
+                    curie=row[0],
+                    name=row[1],
+                    namespace=row[2] or "",
+                    definition=row[3],
+                    ontology_type=row[4],
+                    synonyms=row[5] or [],
+                    match_score=match_score,
+                    matched_field=matched_field,
+                    match_type="trigram",
+                )
+            )
+        return results
 
     def search_anatomy_terms(
         self, term: str, data_provider: str, exact_match: bool = False, include_synonyms: bool = True, limit: int = 20

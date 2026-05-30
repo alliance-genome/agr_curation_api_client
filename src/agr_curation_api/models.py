@@ -342,6 +342,17 @@ class OntologyTermResult(BaseModel):
     definition: Optional[str] = Field(None, description="Term definition")
     ontology_type: str = Field(..., description="Ontology term type (e.g., 'WBBTTerm', 'GOTerm')")
     synonyms: List[str] = Field(default_factory=list, description="List of synonyms")
+    match_score: Optional[float] = Field(
+        None,
+        description="Fuzzy match score (pg_trgm word_similarity, 0-1). Set for trigram matches; None for exact/prefix/contains.",
+    )
+    matched_field: Optional[str] = Field(
+        None, description="Which field produced the match: 'name' or 'synonym'."
+    )
+    match_type: Optional[str] = Field(
+        None,
+        description="How the term matched: 'exact' | 'prefix' | 'contains' | 'trigram'.",
+    )
 
     model_config = ConfigDict(extra="allow")
 
