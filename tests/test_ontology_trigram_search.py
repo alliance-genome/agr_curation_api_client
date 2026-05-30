@@ -12,6 +12,8 @@ same style as tests/test_fuzzy_search.py. They verify:
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
+from sqlalchemy.dialects import postgresql
+
 from agr_curation_api.db_methods import DatabaseMethods, DatabaseConfig
 from agr_curation_api.models import OntologyTermResult
 
@@ -260,6 +262,14 @@ class TestOntologyTrigramTier(unittest.TestCase):
         self.assertEqual(q.args[1]["search_text"], "CILIATED NEURON")
         self.assertEqual(q.args[1]["ontology_type"], "WBBTTerm")
         self.assertNotIn("threshold", q.args[1])  # threshold goes through the GUC, not a query param
+
+        # Render-time escaping guard: compiling against the psycopg2 (pyformat) dialect
+        # must turn the single source `%>` into `%%>` -- NOT `%%%%>`. This is the exact
+        # footgun (a manually-doubled `%%>` in source over-escapes) that otherwise only a
+        # live database would surface; assert it at the unit level.
+        rendered = str(q.args[0].compile(dialect=postgresql.psycopg2.dialect()))
+        self.assertIn("%%> %(search_text)s", rendered)  # operator correctly escaped + bound param
+        self.assertNotIn("%%%%>", rendered)  # not double-escaped
 
 
 if __name__ == "__main__":

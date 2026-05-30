@@ -2604,8 +2604,12 @@ class DatabaseMethods:
             include_synonyms: Whether to include synonym matches
             exclude_curies: Set of CURIEs to exclude (from earlier tiers)
             limit: Maximum results to return
-            threshold: Minimum word_similarity (0-1) for a row to match; applied via the
-                pg_trgm.word_similarity_threshold GUC (default: 0.3)
+            threshold: word_similarity cutoff (0-1) applied via the
+                pg_trgm.word_similarity_threshold GUC (default: 0.3). The %> operator
+                matches rows whose score is STRICTLY GREATER THAN this cutoff (pg_trgm
+                operator semantics) -- it differs from a ``>= threshold`` filter only at
+                the exact boundary, which trigram score ratios rarely land on; treat it
+                as a recall knob rather than a precise inclusive minimum.
 
         Returns:
             List of OntologyTermResult objects with ``match_score``, ``matched_field``,
