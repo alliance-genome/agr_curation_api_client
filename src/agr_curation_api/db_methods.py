@@ -200,6 +200,8 @@ class DatabaseMethods:
                 slota.slotannotationtype = 'GeneSymbolSlotAnnotation'
             AND
                 taxon.curie = :species_taxon
+            AND
+                be.internal = false
             ORDER BY
                 be.primaryexternalid
             """)
@@ -442,6 +444,9 @@ class DatabaseMethods:
                 AND sa.displaytext NOT ILIKE 'WBVar%'
                 AND be.primaryexternalid LIKE 'WB:WBVar%'
                 AND ot.curie = 'NCBITaxon:6239'
+                AND be.internal = false
+                AND be.obsolete = false
+                AND sa.obsolete = false
                 ORDER BY
                     be.primaryexternalid
                 """)
@@ -472,6 +477,8 @@ class DatabaseMethods:
                     slota.slotannotationtype = 'AlleleSymbolSlotAnnotation'
                 AND
                     taxon.curie = :taxon_curie
+                AND
+                    be.internal = false
                 ORDER BY
                     be.primaryexternalid
                 """)
