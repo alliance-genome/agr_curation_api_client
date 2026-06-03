@@ -235,6 +235,7 @@ class GraphQLQueryBuilder:
                 "taxon",
                 "dataProvider",
                 "obsolete",
+                "internal",
             ]
         elif isinstance(fields, str):
             fields = [fields]
