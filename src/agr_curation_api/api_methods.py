@@ -398,7 +398,11 @@ class APIMethods:
         if "results" in response_data:
             for allele_data in response_data["results"]:
                 try:
-                    alleles.append(Allele(**allele_data))
+                    allele = Allele(**allele_data)
+                    # Exclude internal entities (consistent with the DB queries)
+                    if allele.internal:
+                        continue
+                    alleles.append(allele)
                 except ValidationError as e:
                     logger.warning(f"Failed to parse allele data: {e}")
 
@@ -472,7 +476,11 @@ class APIMethods:
         if "results" in response_data:
             for agm_data in response_data["results"]:
                 try:
-                    agms.append(AffectedGenomicModel(**agm_data))
+                    agm = AffectedGenomicModel(**agm_data)
+                    # Exclude internal entities (consistent with the DB queries)
+                    if agm.internal:
+                        continue
+                    agms.append(agm)
                 except ValidationError as e:
                     logger.warning(f"Failed to parse AGM data: {e}")
 

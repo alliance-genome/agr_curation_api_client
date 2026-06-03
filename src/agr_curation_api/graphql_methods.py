@@ -185,6 +185,9 @@ class GraphQLMethods:
             for allele_data in results:
                 try:
                     allele = Allele(**allele_data)
+                    # Exclude internal entities (consistent with the DB queries)
+                    if allele.internal:
+                        continue
                     alleles.append(allele)
                 except ValidationError as e:
                     logger.warning(f"Failed to parse allele data from GraphQL: {e}")
