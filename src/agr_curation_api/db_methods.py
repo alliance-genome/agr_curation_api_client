@@ -779,7 +779,7 @@ class DatabaseMethods:
             WHERE
                 s.obsolete = false
             AND
-                s.assembly_curie is not null
+                s.genomeassembly_id is not null
             """)
             rows = session.execute(sql_query).fetchall()
             return [(row[0], row[1]) for row in rows]
