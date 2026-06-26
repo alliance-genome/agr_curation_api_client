@@ -161,6 +161,29 @@ class APIMethods:
 
         return species_list
 
+    # Resource descriptor endpoints
+    def find_resource_descriptors_for_public(
+        self, limit: int = 5000, page: int = 0, view: str = "ResourceDescriptorView"
+    ) -> List[Dict[str, Any]]:
+        """Fetch resource descriptors from the public findForPublic endpoint.
+
+        The default ``ForPublic`` view omits resourcePages/synonyms/idPattern/idExample,
+        so ``view`` defaults to ``ResourceDescriptorView`` (which extends FieldsOnly) to
+        return the full field set. ``limit`` defaults high so all descriptors come back in
+        a single page (the endpoint only populates totalResults in count-only mode).
+
+        Args:
+            limit: Number of results per page (default high to fetch all at once)
+            page: Page number (0-based)
+            view: JSON view class name controlling response serialization
+
+        Returns:
+            List of raw resource descriptor dicts from the response ``results`` array
+        """
+        url = f"resourcedescriptor/findForPublic?limit={limit}&page={page}&view={view}"
+        response_data = self._make_request("POST", url, {})
+        return list(response_data.get("results", []))
+
     def get_ncbi_taxon_terms(
         self,
         limit: int = 100,

@@ -642,6 +642,15 @@ class AGRCurationAPIClient:
             _filter_by_date=self._filter_by_date,
         )
 
+    # Resource descriptor methods (API only)
+    def get_resource_descriptors(self) -> List[Dict[str, Any]]:
+        """Fetch all public resource descriptors from the A-Team curation API.
+
+        Returns the full field set (prefix, name, synonyms, idPattern, idExample,
+        defaultUrlTemplate, resourcePages) as raw dicts.
+        """
+        return self._api_methods.find_resource_descriptors_for_public()
+
     def get_ncbi_taxon_terms(
         self, limit: int = 100, page: int = 0, updated_after: Optional[Union[str, datetime]] = None
     ) -> List[NCBITaxonTerm]:

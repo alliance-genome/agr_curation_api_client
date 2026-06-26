@@ -171,5 +171,49 @@ class TestGetOrCreateSpecies(unittest.TestCase):
             self.api.get_or_create_species("6239")
 
 
+class TestResourceDescriptors(unittest.TestCase):
+    """Test find_resource_descriptors_for_public request shape and results extraction."""
+
+    def setUp(self):
+        self.mock_request = MagicMock()
+        self.api = APIMethods(self.mock_request)
+
+    def test_returns_results_list(self):
+        """Should return the response 'results' array as raw dicts."""
+        self.mock_request.return_value = {
+            "results": [
+                {
+                    "prefix": "MGI",
+                    "name": "MGI",
+                    "defaultUrlTemplate": "http://informatics.jax.org/[%s]",
+                    "resourcePages": [
+                        {"name": "gene", "urlTemplate": "http://informatics.jax.org/marker/[%s]"}
+                    ],
+                }
+            ],
+            "returnedRecords": 1,
+        }
+        out = self.api.find_resource_descriptors_for_public()
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["prefix"], "MGI")
+        self.assertEqual(out[0]["resourcePages"][0]["urlTemplate"],
+                         "http://informatics.jax.org/marker/[%s]")
+
+    def test_request_uses_findforpublic_with_full_view(self):
+        """Should POST to findForPublic with view=ResourceDescriptorView and empty filter."""
+        self.mock_request.return_value = {"results": []}
+        self.api.find_resource_descriptors_for_public()
+        method, url, body = self.mock_request.call_args.args
+        self.assertEqual(method, "POST")
+        self.assertTrue(url.startswith("resourcedescriptor/findForPublic"))
+        self.assertIn("view=ResourceDescriptorView", url)
+        self.assertEqual(body, {})
+
+    def test_returns_empty_when_no_results_key(self):
+        """Should return [] when the response has no 'results'."""
+        self.mock_request.return_value = {}
+        self.assertEqual(self.api.find_resource_descriptors_for_public(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
