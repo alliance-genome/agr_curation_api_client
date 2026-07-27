@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 from os import environ
-from typing import List, Optional, Dict, Any, Set
+from typing import List, Optional, Dict, Any, Sequence, Set, Tuple
 from sqlalchemy.engine import Engine
 
 from sqlalchemy import create_engine, text, bindparam
@@ -25,6 +25,23 @@ logger = logging.getLogger(__name__)
 CURIE_PREFIX_LIST = ["FB", "MGI", "RGD", "SGD", "WB", "XenBase", "ZFIN"]
 TOPIC_CATEGORY_ATP = "ATP:0000002"
 
+# SO gene types used to keep non-gene sequence features out of gene queries. The
+# persistent store's gene table also holds features such as TF_binding_site,
+# sequence_feature and TSS_region, which carry a GeneSymbolSlotAnnotation but are
+# not genes.
+GENE_SO_TERM_CURIE = "SO:0000704"
+
+# The wider include list used by the gene descriptions pipeline. None of the last
+# three are is_a descendants of SO:0000704, so they cannot be reached from the
+# default gene subtree and have to be named explicitly; the four subtrees do not
+# overlap. Exported so callers that want this set do not hardcode the CURIEs.
+GENE_LIKE_SO_TERM_CURIES = (
+    GENE_SO_TERM_CURIE,  # gene
+    "SO:0000336",  # pseudogene (is_a biological_region)
+    "SO:3000000",  # gene_segment (is_a gene_component_region)
+    "SO:0001500",  # heritable_phenotypic_marker (is_a genetic_marker)
+)
+
 # Prefixes recognized as cross-reference identifiers in the literature ES index.
 _LITERATURE_XREF_PREFIXES = {
     "PMID", "PMCID", "DOI",
@@ -32,6 +49,51 @@ _LITERATURE_XREF_PREFIXES = {
     "FB", "MGI", "RGD", "SGD", "WB", "WORMBASE", "XB", "XENBASE", "ZFIN",
 }
 _AGRKB_CURIE_RE = re.compile(r"^AGR(?:KB)?:", re.IGNORECASE)
+
+
+def _gene_type_filter_sql(so_terms: Sequence[str], include_descendants: bool) -> Tuple[str, str]:
+    """Build the JOIN and WHERE fragments restricting genes to the given SO gene types.
+
+    Args:
+        so_terms: SO CURIEs to accept as gene types. An empty sequence disables filtering.
+        include_descendants: If True, also accept is_a descendants of those terms.
+
+    Returns:
+        Tuple of (join_fragment, where_fragment), both empty when so_terms is empty.
+    """
+    if not so_terms:
+        return "", ""
+
+    joins = """
+                JOIN gene g ON be.id = g.id
+                JOIN ontologyterm gt ON g.genetype_id = gt.id"""
+
+    if not include_descendants:
+        return joins, """
+            AND
+                gt.obsolete = false
+            AND
+                gt.curie IN :so_terms"""
+
+    # The requested terms are matched directly as well as through the closure:
+    # ontologytermclosure has no distance-0 self row, so a closure-only predicate
+    # would drop every gene typed as exactly one of the requested terms. Only pure
+    # is_a closure rows are followed — the mixed is_a/part_of rows walk part_of
+    # paths and would pull in features that are merely part of a gene.
+    return joins, """
+            AND
+                gt.obsolete = false
+            AND (
+                    gt.curie IN :so_terms
+                OR EXISTS (
+                    SELECT 1
+                    FROM ontologytermclosure otc
+                    JOIN ontologyterm gt_ancestor ON gt_ancestor.id = otc.closureobject_id
+                    WHERE otc.closuresubject_id = gt.id
+                    AND otc.closuretypes = '["is_a"]'::jsonb
+                    AND gt_ancestor.curie IN :so_terms
+                )
+            )"""
 
 
 class DatabaseConfig:
@@ -236,31 +298,68 @@ class DatabaseMethods:
             session.close()
 
     def get_genes_raw(
-        self, taxon_curie: str, limit: Optional[int] = None, offset: Optional[int] = None
+        self,
+        taxon_curie: str,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        so_terms: Optional[Sequence[str]] = None,
+        include_descendants: bool = True,
     ) -> List[Dict[str, Any]]:
         """Get genes as raw dictionary data.
 
         This is a lightweight alternative that returns dictionaries instead
         of Pydantic models.
 
+        Results are restricted by SO gene type, because the persistent store's gene
+        table also contains non-gene sequence features (TF_binding_site,
+        sequence_feature, TSS_region, polyA_site, ...) that carry a
+        GeneSymbolSlotAnnotation. Unfiltered, those inflate the result enormously —
+        WB NCBITaxon:6239 returns ~778k objects of which only ~49.5k are genes.
+
         Args:
             taxon_curie: NCBI Taxon CURIE
             limit: Maximum number of genes to return
             offset: Number of genes to skip
+            so_terms: SO CURIEs to accept as gene types. Defaults to
+                ``[GENE_SO_TERM_CURIE]`` (SO:0000704 "gene") and its is_a descendants.
+                Three gene types are not under "gene" in SO and so must be requested
+                explicitly if wanted: SO:0000336 pseudogene, SO:3000000 gene_segment,
+                SO:0001500 heritable_phenotypic_marker. ``GENE_LIKE_SO_TERM_CURIES``
+                is the four-root list covering all of them. Pass an empty list to
+                disable gene-type filtering entirely (the pre-0.14 behaviour).
+            include_descendants: If True (default), also accept is_a descendants of
+                the requested terms. Obsolete gene types are always excluded.
 
         Returns:
             List of dictionaries with gene_id and gene_symbol keys
+
+        Raises:
+            ValueError: If so_terms is a bare string rather than a sequence of CURIEs.
+
+        Example:
+            # Genes, pseudogenes, gene segments and phenotypic markers
+            genes = db_methods.get_genes_raw(
+                'NCBITaxon:10090',
+                so_terms=GENE_LIKE_SO_TERM_CURIES,
+            )
         """
+        if isinstance(so_terms, str):
+            raise ValueError(
+                f"so_terms must be a sequence of SO CURIEs, not a bare string: {so_terms!r}. "
+                f"Pass [{so_terms!r}] to filter on a single term."
+            )
+        gene_types = [GENE_SO_TERM_CURIE] if so_terms is None else list(so_terms)
         session = self._create_session()
         try:
-            sql_query = text("""
+            gene_type_joins, gene_type_filter = _gene_type_filter_sql(gene_types, include_descendants)
+            sql = f"""
             SELECT
                 be.primaryexternalid as geneId,
                 slota.displaytext as geneSymbol
             FROM
                 biologicalentity be
                 JOIN slotannotation slota ON be.id = slota.singlegene_id
-                JOIN ontologyterm taxon ON be.taxon_id = taxon.id
+                JOIN ontologyterm taxon ON be.taxon_id = taxon.id{gene_type_joins}
             WHERE
                 slota.obsolete = false
             AND
@@ -268,18 +367,24 @@ class DatabaseMethods:
             AND
                 slota.slotannotationtype = 'GeneSymbolSlotAnnotation'
             AND
-                taxon.curie = :species_taxon
+                taxon.curie = :species_taxon{gene_type_filter}
             ORDER BY
                 be.primaryexternalid
-            """)
+            """
 
             # Add pagination if specified
             if limit is not None:
-                sql_query = text(str(sql_query) + f" LIMIT {limit}")
+                sql += f" LIMIT {limit}"
             if offset is not None:
-                sql_query = text(str(sql_query) + f" OFFSET {offset}")
+                sql += f" OFFSET {offset}"
 
-            rows = session.execute(sql_query, {"species_taxon": taxon_curie}).fetchall()
+            sql_query = text(sql)
+            params: Dict[str, Any] = {"species_taxon": taxon_curie}
+            if gene_types:
+                sql_query = sql_query.bindparams(bindparam("so_terms", expanding=True))
+                params["so_terms"] = gene_types
+
+            rows = session.execute(sql_query, params).fetchall()
             return [{"gene_id": row[0], "gene_symbol": row[1]} for row in rows]
 
         except Exception as e:
