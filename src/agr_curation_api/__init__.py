@@ -38,9 +38,14 @@ from .graphql_queries import (
 )
 from .api_methods import APIMethods
 from .graphql_methods import GraphQLMethods
-from .db_methods import DatabaseMethods, DatabaseConfig
+from .db_methods import (
+    DatabaseMethods,
+    DatabaseConfig,
+    GENE_SO_TERM_CURIE,
+    GENE_LIKE_SO_TERM_CURIES,
+)
 
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 __all__ = [
     "AGRCurationAPIClient",
     "DataSource",
@@ -69,4 +74,6 @@ __all__ = [
     "GraphQLMethods",
     "DatabaseMethods",
     "DatabaseConfig",
+    "GENE_SO_TERM_CURIE",
+    "GENE_LIKE_SO_TERM_CURIES",
 ]
