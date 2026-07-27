@@ -12,7 +12,7 @@ import urllib.request
 from datetime import datetime, timezone
 from enum import Enum
 from types import TracebackType
-from typing import Optional, Dict, Any, List, Union, Type, Callable
+from typing import Optional, Dict, Any, List, Sequence, Union, Type, Callable
 
 from agr_cognito_py import get_authentication_token, generate_headers
 
@@ -390,6 +390,7 @@ class AGRCurationAPIClient:
         fields: Union[str, List[str], None] = None,
         include_obsolete: bool = False,
         data_source: Optional[Union[DataSource, str]] = None,
+        so_terms: Optional[Sequence[str]] = None,
         **kwargs: Any,
     ) -> List[Gene]:
         """Get genes using the configured or specified data source.
@@ -404,6 +405,11 @@ class AGRCurationAPIClient:
             fields: Field specification (GraphQL only)
             include_obsolete: If False, filter out obsolete genes (default: False)
             data_source: Override default data source for this call
+            so_terms: SO CURIEs to accept as gene types, defaulting to SO:0000704
+                "gene" and its is_a descendants (DB only). ``GENE_LIKE_SO_TERM_CURIES``
+                additionally covers pseudogene, gene_segment and
+                heritable_phenotypic_marker, which are not under "gene" in SO. Pass an
+                empty list to disable gene-type filtering.
             **kwargs: Additional parameters for GraphQL
 
         Returns:
@@ -414,6 +420,8 @@ class AGRCurationAPIClient:
             - GraphQL/DB filter by taxon to get consistent results across data sources
             - For C. elegans: use taxon="NCBITaxon:6239" OR data_provider="WB"
             - When data_source is None, automatically tries db -> graphql -> api with fallback
+            - so_terms applies to the DB source only; the API and GraphQL sources have no
+              gene-type filter, so they still return non-gene sequence features
         """
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
@@ -424,7 +432,11 @@ class AGRCurationAPIClient:
 
                 def db_func() -> List[Gene]:
                     return self._get_db_methods().get_genes_by_taxon(
-                        taxon_curie=taxon, limit=limit, offset=offset, include_obsolete=include_obsolete
+                        taxon_curie=taxon,
+                        limit=limit,
+                        offset=offset,
+                        include_obsolete=include_obsolete,
+                        so_terms=so_terms,
                     )
 
             else:
@@ -472,7 +484,11 @@ class AGRCurationAPIClient:
             if not taxon:
                 raise AGRAPIError("taxon parameter is required for database queries")
             return self._get_db_methods().get_genes_by_taxon(
-                taxon_curie=taxon, limit=limit, offset=offset, include_obsolete=include_obsolete
+                taxon_curie=taxon,
+                limit=limit,
+                offset=offset,
+                include_obsolete=include_obsolete,
+                so_terms=so_terms,
             )
         else:  # API
             return self._api_methods.get_genes(

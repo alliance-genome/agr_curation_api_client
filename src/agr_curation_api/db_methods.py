@@ -217,25 +217,53 @@ class DatabaseMethods:
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         include_obsolete: bool = False,
+        so_terms: Optional[Sequence[str]] = None,
+        include_descendants: bool = True,
     ) -> List[Gene]:
         """Get genes from the database by taxon.
 
         This uses direct SQL queries for efficient data retrieval,
         returning minimal gene information (ID and symbol).
 
+        Results are restricted by SO gene type, because the persistent store's gene
+        table also contains non-gene sequence features (TF_binding_site,
+        sequence_feature, TSS_region, polyA_site, ...) that carry a
+        GeneSymbolSlotAnnotation. Unfiltered, those inflate the result enormously —
+        WB NCBITaxon:6239 returns ~778k objects of which only ~49.5k are genes.
+
         Args:
             taxon_curie: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239')
             limit: Maximum number of genes to return
             offset: Number of genes to skip (for pagination)
-            include_obsolete: If False, filter out obsolete genes (default: False)
+            include_obsolete: If False, filter out obsolete genes (default: False).
+                This concerns the gene itself; obsolete SO gene types are always
+                excluded regardless of this flag.
+            so_terms: SO CURIEs to accept as gene types. Defaults to
+                ``[GENE_SO_TERM_CURIE]`` (SO:0000704 "gene") and its is_a descendants.
+                Three gene types are not under "gene" in SO and so must be requested
+                explicitly if wanted: SO:0000336 pseudogene, SO:3000000 gene_segment,
+                SO:0001500 heritable_phenotypic_marker. ``GENE_LIKE_SO_TERM_CURIES``
+                is the four-root list covering all of them. Pass an empty list to
+                disable gene-type filtering entirely (the pre-0.14 behaviour).
+            include_descendants: If True (default), also accept is_a descendants of
+                the requested terms.
 
         Returns:
             List of Gene objects with basic information
+
+        Raises:
+            ValueError: If so_terms is a bare string rather than a sequence of CURIEs.
 
         Example:
             # Get C. elegans genes
             genes = db_methods.get_genes_by_taxon('NCBITaxon:6239', limit=100)
         """
+        if isinstance(so_terms, str):
+            raise ValueError(
+                f"so_terms must be a sequence of SO CURIEs, not a bare string: {so_terms!r}. "
+                f"Pass [{so_terms!r}] to filter on a single term."
+            )
+        gene_types = [GENE_SO_TERM_CURIE] if so_terms is None else list(so_terms)
         session = self._create_session()
         try:
             # Build WHERE clause based on include_obsolete parameter
@@ -249,32 +277,39 @@ class DatabaseMethods:
             AND"""
             )
 
-            sql_query = text(f"""
+            gene_type_joins, gene_type_filter = _gene_type_filter_sql(gene_types, include_descendants)
+            sql = f"""
             SELECT
                 be.primaryexternalid as "primaryExternalId",
                 slota.displaytext as geneSymbol
             FROM
                 biologicalentity be
                 JOIN slotannotation slota ON be.id = slota.singlegene_id
-                JOIN ontologyterm taxon ON be.taxon_id = taxon.id
+                JOIN ontologyterm taxon ON be.taxon_id = taxon.id{gene_type_joins}
             WHERE
                 {obsolete_filter}
                 slota.slotannotationtype = 'GeneSymbolSlotAnnotation'
             AND
                 taxon.curie = :species_taxon
             AND
-                be.internal = false
+                be.internal = false{gene_type_filter}
             ORDER BY
                 be.primaryexternalid
-            """)
+            """
 
             # Add pagination if specified
             if limit is not None:
-                sql_query = text(str(sql_query) + f" LIMIT {limit}")
+                sql += f" LIMIT {limit}"
             if offset is not None:
-                sql_query = text(str(sql_query) + f" OFFSET {offset}")
+                sql += f" OFFSET {offset}"
 
-            rows = session.execute(sql_query, {"species_taxon": taxon_curie}).fetchall()
+            sql_query = text(sql)
+            params: Dict[str, Any] = {"species_taxon": taxon_curie}
+            if gene_types:
+                sql_query = sql_query.bindparams(bindparam("so_terms", expanding=True))
+                params["so_terms"] = gene_types
+
+            rows = session.execute(sql_query, params).fetchall()
 
             genes = []
             for row in rows:
