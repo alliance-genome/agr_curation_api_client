@@ -231,6 +231,11 @@ class DatabaseMethods:
         GeneSymbolSlotAnnotation. Unfiltered, those inflate the result enormously —
         WB NCBITaxon:6239 returns ~778k objects of which only ~49.5k are genes.
 
+        Filtering joins through gene.genetype_id, so genes carrying no gene type at
+        all are excluded along with the non-gene features, as are genes whose gene
+        type is an obsolete SO term. Pass so_terms=[] to disable the filter and get
+        every row back, untyped genes included.
+
         Args:
             taxon_curie: NCBI Taxon CURIE (e.g., 'NCBITaxon:6239')
             limit: Maximum number of genes to return
@@ -350,6 +355,11 @@ class DatabaseMethods:
         sequence_feature, TSS_region, polyA_site, ...) that carry a
         GeneSymbolSlotAnnotation. Unfiltered, those inflate the result enormously —
         WB NCBITaxon:6239 returns ~778k objects of which only ~49.5k are genes.
+
+        Filtering joins through gene.genetype_id, so genes carrying no gene type at
+        all are excluded along with the non-gene features, as are genes whose gene
+        type is an obsolete SO term. Pass so_terms=[] to disable the filter and get
+        every row back, untyped genes included.
 
         Args:
             taxon_curie: NCBI Taxon CURIE

@@ -408,8 +408,10 @@ class AGRCurationAPIClient:
             so_terms: SO CURIEs to accept as gene types, defaulting to SO:0000704
                 "gene" and its is_a descendants (DB only). ``GENE_LIKE_SO_TERM_CURIES``
                 additionally covers pseudogene, gene_segment and
-                heritable_phenotypic_marker, which are not under "gene" in SO. Pass an
-                empty list to disable gene-type filtering.
+                heritable_phenotypic_marker, which are not under "gene" in SO. Genes
+                with no gene type, and genes whose gene type is an obsolete SO term,
+                are excluded. Pass an empty list to disable gene-type filtering and
+                restore the pre-0.14 behaviour.
             **kwargs: Additional parameters for GraphQL
 
         Returns:

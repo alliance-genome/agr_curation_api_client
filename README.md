@@ -115,6 +115,55 @@ if gene:
 all_genes = client.get_genes(limit=5000, page=0)
 ```
 
+#### Gene type filtering (database source)
+
+The curation store's `gene` table also holds non-gene sequence features —
+`TF_binding_site`, `sequence_feature`, `TSS_region`, `polyA_site` and others — which
+carry a gene symbol annotation but are not genes. Unfiltered, C. elegans returns
+~778k objects of which only ~49.5k are genes.
+
+Since **0.14.0** the database source therefore restricts results to genes whose
+Sequence Ontology gene type is `SO:0000704` "gene" or one of its `is_a` descendants.
+This applies to `client.get_genes(data_source="db")` and to
+`DatabaseMethods.get_genes_by_taxon` / `get_genes_raw`.
+
+> **Upgrading from 0.13.x:** this is a behaviour change. Existing calls return fewer
+> rows — the non-gene features above are now excluded, and so are pseudogenes, gene
+> segments and heritable phenotypic markers, which sit outside the "gene" subtree in
+> SO. If you need those, pass `so_terms` explicitly as shown below. The API and
+> GraphQL sources are unaffected and still return unfiltered results.
+
+```python
+from agr_curation_api import GENE_SO_TERM_CURIE, GENE_LIKE_SO_TERM_CURIES
+
+# Default: SO:0000704 "gene" and its is_a descendants
+genes = client.get_genes(taxon="NCBITaxon:6239", data_source="db")
+
+# Also include pseudogenes, gene segments and heritable phenotypic markers.
+# These three are not is_a descendants of "gene", so they must be named
+# explicitly; MGI in particular relies on the latter two.
+genes = client.get_genes(
+    taxon="NCBITaxon:10090",
+    data_source="db",
+    so_terms=GENE_LIKE_SO_TERM_CURIES,
+)
+
+# Restore pre-0.14 behaviour: no gene-type filtering at all
+genes = client.get_genes(taxon="NCBITaxon:6239", data_source="db", so_terms=[])
+```
+
+`GENE_LIKE_SO_TERM_CURIES` is `("SO:0000704", "SO:0000336", "SO:3000000",
+"SO:0001500")` — gene, pseudogene, gene_segment and heritable_phenotypic_marker.
+Use the constant rather than hardcoding the CURIEs.
+
+Two exclusions apply regardless of `so_terms`: obsolete SO gene types never match
+(`TSS_region` is flagged obsolete, for instance), and genes with no gene type at all
+are dropped, because the filter joins through `gene.genetype_id`. Pass `so_terms=[]`
+to disable both along with the filter itself.
+
+`DatabaseMethods` additionally accepts `include_descendants=False` for exact-match-only
+filtering; that parameter is not exposed on `client.get_genes`.
+
 ### Working with Species
 
 ```python
