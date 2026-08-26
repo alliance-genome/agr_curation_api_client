@@ -16,7 +16,15 @@ from sqlalchemy import create_engine, text, bindparam
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import ValidationError
 
-from .models import Gene, Allele, OntologyTermResult, DiseaseAnnotation, ReferenceResult, VocabularyTermResult
+from .models import (
+    Gene,
+    Allele,
+    AlleleGeneAssociationResult,
+    OntologyTermResult,
+    DiseaseAnnotation,
+    ReferenceResult,
+    VocabularyTermResult,
+)
 from .exceptions import AGRAPIError
 
 logger = logging.getLogger(__name__)
@@ -740,6 +748,7 @@ class DatabaseMethods:
             # Query to get complete allele information
             sql_query = text("""
             SELECT
+                be.id,
                 be.primaryexternalid,
                 be.curie,
                 be.obsolete,
@@ -763,7 +772,10 @@ class DatabaseMethods:
                     AND fullname.slotannotationtype = 'AlleleFullNameSlotAnnotation'
                     AND fullname.obsolete = false
             WHERE
-                be.primaryexternalid = :allele_id
+                (be.primaryexternalid = :allele_id OR be.curie = :allele_id)
+            ORDER BY
+                (be.primaryexternalid = :allele_id) IS TRUE DESC,
+                be.id
             LIMIT 1
             """)
 
@@ -774,24 +786,25 @@ class DatabaseMethods:
 
             # Build Allele object from query results
             allele_data = {
-                "primaryExternalId": row[0],
-                "curie": row[1] or row[0],  # Use primaryExternalId as fallback
-                "obsolete": row[2],
-                "internal": row[3],
-                "taxon": row[4],
-                "isExtinct": row[5],
+                "id": row[0],
+                "primaryExternalId": row[1],
+                "curie": row[2] or row[1],  # Use primaryExternalId as fallback
+                "obsolete": row[3],
+                "internal": row[4],
+                "taxon": row[5],
+                "isExtinct": row[6],
             }
 
             # Add collection name if available (not in standard Allele model, but useful)
             # Note: This may need to be added to the Allele model or handled separately
 
             # Add allele symbol if available
-            if row[7]:
-                allele_data["alleleSymbol"] = {"displayText": row[7], "formatText": row[8] or row[7]}
+            if row[8]:
+                allele_data["alleleSymbol"] = {"displayText": row[8], "formatText": row[9] or row[8]}
 
             # Add allele full name if available
-            if row[9]:
-                allele_data["alleleFullName"] = {"displayText": row[9], "formatText": row[10] or row[9]}
+            if row[10]:
+                allele_data["alleleFullName"] = {"displayText": row[10], "formatText": row[11] or row[10]}
 
             try:
                 allele = Allele(**allele_data)
@@ -802,6 +815,92 @@ class DatabaseMethods:
 
         except Exception as e:
             raise AGRAPIError(f"Database query failed for allele {allele_id}: {str(e)}")
+        finally:
+            session.close()
+
+    def search_allele_gene_associations(
+        self,
+        allele_identifier: str,
+        gene_identifier: str,
+        include_obsolete: bool = False,
+        limit: int = 20,
+    ) -> List[AlleleGeneAssociationResult]:
+        """Find existing allele-gene associations by exact validated identifiers.
+
+        Returning a list preserves no-match and multiple-match outcomes so callers
+        can require an unambiguous association before using its durable integer ID.
+        When an allele or gene was resolved separately, callers must also compare
+        its durable ID with the corresponding ID on the selected association.
+        """
+        allele_identifier = allele_identifier.strip()
+        gene_identifier = gene_identifier.strip()
+        if not allele_identifier or not gene_identifier:
+            return []
+        if limit < 1:
+            raise AGRAPIError("limit must be at least 1")
+
+        session = self._create_session()
+        try:
+            sql_query = text("""
+            SELECT
+                aga.id,
+                allele_be.id,
+                COALESCE(NULLIF(allele_be.curie, ''), allele_be.primaryexternalid),
+                gene_be.id,
+                COALESCE(NULLIF(gene_be.curie, ''), gene_be.primaryexternalid),
+                aga.relation_id,
+                aga.obsolete,
+                aga.internal
+            FROM
+                allelegeneassociation aga
+                JOIN biologicalentity allele_be
+                    ON allele_be.id = aga.alleleassociationsubject_id
+                JOIN biologicalentity gene_be
+                    ON gene_be.id = aga.allelegeneassociationobject_id
+            WHERE
+                (allele_be.primaryexternalid = :allele_identifier
+                    OR allele_be.curie = :allele_identifier)
+                AND (gene_be.primaryexternalid = :gene_identifier
+                    OR gene_be.curie = :gene_identifier)
+                AND aga.internal = false
+                AND allele_be.internal = false
+                AND gene_be.internal = false
+                AND (
+                    :include_obsolete
+                    OR (
+                        aga.obsolete = false
+                        AND allele_be.obsolete = false
+                        AND gene_be.obsolete = false
+                    )
+                )
+            ORDER BY
+                aga.id DESC
+            LIMIT :limit
+            """)
+            rows = session.execute(
+                sql_query,
+                {
+                    "allele_identifier": allele_identifier,
+                    "gene_identifier": gene_identifier,
+                    "include_obsolete": include_obsolete,
+                    "limit": limit,
+                },
+            ).fetchall()
+            return [
+                AlleleGeneAssociationResult(
+                    association_id=row[0],
+                    allele_id=row[1],
+                    allele_curie=row[2],
+                    gene_id=row[3],
+                    gene_curie=row[4],
+                    relation_id=row[5],
+                    obsolete=row[6],
+                    internal=row[7],
+                )
+                for row in rows
+            ]
+        except Exception as e:
+            raise AGRAPIError(f"Database query failed for allele-gene association: {str(e)}")
         finally:
             session.close()
 

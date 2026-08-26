@@ -30,6 +30,7 @@ from .models import (
     SlotAnnotation,
     AffectedGenomicModel,
     DiseaseAnnotation,
+    AlleleGeneAssociationResult,
 )
 from .graphql_queries import (
     GraphQLQueryBuilder,
@@ -45,7 +46,7 @@ from .db_methods import (
     GENE_LIKE_SO_TERM_CURIES,
 )
 
-__version__ = "0.14.0"
+__version__ = "0.14.1"
 __all__ = [
     "AGRCurationAPIClient",
     "DataSource",
@@ -67,6 +68,7 @@ __all__ = [
     "SlotAnnotation",
     "AffectedGenomicModel",
     "DiseaseAnnotation",
+    "AlleleGeneAssociationResult",
     "GraphQLQueryBuilder",
     "FieldSelector",
     "build_graphql_params",
