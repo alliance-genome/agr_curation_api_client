@@ -377,6 +377,21 @@ class ReferenceResult(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class AlleleGeneAssociationResult(BaseModel):
+    """Durable identifiers for an existing allele-gene association."""
+
+    association_id: int = Field(..., description="Internal allelegeneassociation ID")
+    allele_id: int = Field(..., description="Internal allele/biologicalentity ID")
+    allele_curie: str = Field(..., description="Canonical allele identifier")
+    gene_id: int = Field(..., description="Internal gene/biologicalentity ID")
+    gene_curie: str = Field(..., description="Canonical gene identifier")
+    relation_id: Optional[int] = Field(None, description="Internal association relation vocabulary-term ID")
+    obsolete: bool = Field(False, description="Whether the association is obsolete")
+    internal: bool = Field(False, description="Whether the association is internal")
+
+    model_config = ConfigDict(extra="allow")
+
+
 class VocabularyTermResult(BaseModel):
     """Vocabulary term result from curation database search."""
 

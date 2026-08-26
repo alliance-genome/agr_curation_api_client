@@ -51,6 +51,14 @@ class FakeDatabaseMethods:
         self.calls.append(("get_reference", kwargs))
         return "reference"
 
+    def get_allele(self, **kwargs):
+        self.calls.append(("get_allele", kwargs))
+        return "allele"
+
+    def search_allele_gene_associations(self, **kwargs):
+        self.calls.append(("search_allele_gene_associations", kwargs))
+        return ["allele_gene_association"]
+
     def search_references(self, **kwargs):
         self.calls.append(("search_references", kwargs))
         return ["reference"]
@@ -128,3 +136,27 @@ def test_reference_and_vocabulary_methods_delegate_to_database_methods():
         {"query": "NF-kB", "exact_match": True, "limit": 1},
     )
     assert fake_db.calls[5][1]["vocabulary"] == "Condition Relation Type"
+
+
+def test_allele_identifier_methods_delegate_to_database_methods():
+    client, fake_db = make_client_with_fake_db()
+
+    assert client.get_allele("WB:WBVar00000001") == "allele"
+    assert client.search_allele_gene_associations(
+        "WB:WBVar00000001",
+        "WB:WBGene00003883",
+        limit=3,
+    ) == ["allele_gene_association"]
+
+    assert fake_db.calls == [
+        ("get_allele", {"allele_id": "WB:WBVar00000001"}),
+        (
+            "search_allele_gene_associations",
+            {
+                "allele_identifier": "WB:WBVar00000001",
+                "gene_identifier": "WB:WBGene00003883",
+                "include_obsolete": False,
+                "limit": 3,
+            },
+        ),
+    ]

@@ -29,6 +29,7 @@ from .models import (
     NCBITaxonTerm,
     OntologyTerm,
     OntologyTermResult,
+    AlleleGeneAssociationResult,
     ReferenceResult,
     VocabularyTermResult,
     ExpressionAnnotation,
@@ -635,7 +636,7 @@ class AGRCurationAPIClient:
 
         Args:
             allele_id: Allele curie or primary external ID
-            data_source: Override default data source (API only)
+            data_source: Override default data source
 
         Returns:
             Allele object or None if not found
@@ -643,7 +644,7 @@ class AGRCurationAPIClient:
         source = DataSource(data_source.lower()) if data_source else self.data_source
 
         if source == DataSource.DATABASE:
-            raise AGRAPIError("Single allele lookup by ID not implemented for database source")
+            return self._get_db_methods().get_allele(allele_id=allele_id)
         else:  # API (GraphQL doesn't have single allele by ID)
             return self._api_methods.get_allele(allele_id)
 
@@ -1048,6 +1049,21 @@ class AGRCurationAPIClient:
     def get_reference(self, identifier: str, include_obsolete: bool = False) -> Optional[ReferenceResult]:
         """Get a curation database reference by AGRKB CURIE, PMID, DOI, MOD ID, or short citation."""
         return self._get_db_methods().get_reference(identifier=identifier, include_obsolete=include_obsolete)
+
+    def search_allele_gene_associations(
+        self,
+        allele_identifier: str,
+        gene_identifier: str,
+        include_obsolete: bool = False,
+        limit: int = 20,
+    ) -> List[AlleleGeneAssociationResult]:
+        """Find existing allele-gene associations by exact validated identifiers."""
+        return self._get_db_methods().search_allele_gene_associations(
+            allele_identifier=allele_identifier,
+            gene_identifier=gene_identifier,
+            include_obsolete=include_obsolete,
+            limit=limit,
+        )
 
     def search_references(
         self,

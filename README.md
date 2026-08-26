@@ -309,12 +309,21 @@ for allele in wb_alleles:
     symbol = allele.allele_symbol.get("displayText", "") if allele.allele_symbol else ""
     print(f"{allele.curie}: {symbol}")
 
-# Get a specific allele by ID (works with database, GraphQL, or API)
-allele = client.get_allele("WB:WBVar00001234")
+# Get a specific allele through the database source. The returned id is the
+# durable public.allele / biologicalentity integer ID.
+db_client = AGRCurationAPIClient(data_source="db")
+allele = db_client.get_allele("WB:WBVar00001234")
 if allele:
-    print(f"Allele: {allele.allele_symbol}")
-    print(f"Full name: {allele.allele_full_name}")
-    print(f"Extinction status: {allele.is_extinct}")
+    print(f"Allele database ID: {allele.id}")
+
+# Preserve zero/one/multiple outcomes when resolving an existing association.
+# Callers that require an unambiguous target should proceed only for one result.
+associations = db_client.search_allele_gene_associations(
+    "WB:WBVar00000001",
+    "WB:WBGene00003883",
+)
+if len(associations) == 1:
+    print(f"Association database ID: {associations[0].association_id}")
 ```
 
 ### Searching Entities

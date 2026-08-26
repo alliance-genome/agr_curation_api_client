@@ -71,6 +71,26 @@ def test_curation_validation_helpers_against_live_curation_db():
         assert db.get_reference(obsolete_reference_curie) is None
 
 
+def test_allele_identifier_helpers_against_live_curation_db():
+    db = DatabaseMethods()
+    if current_database(db) != "curation":
+        pytest.skip("Requires a curation database connection")
+
+    allele = db.get_allele("WB:WBVar00000001")
+    assert allele is not None
+    assert allele.id is not None
+    assert allele.curie == "WB:WBVar00000001"
+
+    associations = db.search_allele_gene_associations(
+        allele_identifier="WB:WBVar00000001",
+        gene_identifier="WB:WBGene00003883",
+    )
+    assert len(associations) == 1
+    assert associations[0].allele_id == allele.id
+    assert associations[0].allele_curie == allele.curie
+    assert associations[0].gene_curie == "WB:WBGene00003883"
+
+
 def test_literature_reference_helpers_against_live_literature_db():
     db = DatabaseMethods()
     if current_database(db) != "literature":
