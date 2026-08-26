@@ -99,6 +99,35 @@ def test_search_allele_gene_associations_preserves_all_exact_matches(mock_sessio
     session.close.assert_called_once()
 
 
+@patch("agr_curation_api.db_methods.DatabaseMethods._create_session")
+def test_search_allele_gene_associations_preserves_nullable_obsolete_status(mock_session_factory, db_methods):
+    session = MagicMock()
+    mock_session_factory.return_value = session
+    session.execute.return_value.fetchall.return_value = [
+        (
+            202511462,
+            4749192,
+            "WB:WBVar00000001",
+            5277082,
+            "WB:WBGene00003883",
+            123,
+            None,
+            False,
+        )
+    ]
+
+    results = db_methods.search_allele_gene_associations(
+        "WB:WBVar00000001",
+        "WB:WBGene00003883",
+        include_obsolete=True,
+    )
+
+    assert len(results) == 1
+    assert results[0].obsolete is None
+    assert session.execute.call_args.args[1]["include_obsolete"] is True
+    session.close.assert_called_once()
+
+
 def test_search_allele_gene_associations_rejects_empty_or_invalid_limits(db_methods):
     assert db_methods.search_allele_gene_associations("", "WB:WBGene00003883") == []
     assert db_methods.search_allele_gene_associations("WB:WBVar00000001", "") == []

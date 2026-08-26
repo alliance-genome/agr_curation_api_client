@@ -386,7 +386,7 @@ class AlleleGeneAssociationResult(BaseModel):
     gene_id: int = Field(..., description="Internal gene/biologicalentity ID")
     gene_curie: str = Field(..., description="Canonical gene identifier")
     relation_id: Optional[int] = Field(None, description="Internal association relation vocabulary-term ID")
-    obsolete: bool = Field(False, description="Whether the association is obsolete")
+    obsolete: Optional[bool] = Field(None, description="Whether the association is obsolete, or unset")
     internal: bool = Field(False, description="Whether the association is internal")
 
     model_config = ConfigDict(extra="allow")
