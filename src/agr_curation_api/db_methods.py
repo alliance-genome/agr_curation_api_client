@@ -773,6 +773,9 @@ class DatabaseMethods:
                     AND fullname.obsolete = false
             WHERE
                 (be.primaryexternalid = :allele_id OR be.curie = :allele_id)
+            ORDER BY
+                (be.primaryexternalid = :allele_id) DESC,
+                be.id
             LIMIT 1
             """)
 

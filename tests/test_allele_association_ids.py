@@ -45,6 +45,7 @@ def test_get_allele_returns_durable_database_id(mock_session_factory, db_methods
     sql = str(session.execute.call_args.args[0])
     assert "be.id" in sql
     assert "be.curie = :allele_id" in sql
+    assert "(be.primaryexternalid = :allele_id) DESC" in sql
     session.close.assert_called_once()
 
 
@@ -54,22 +55,22 @@ def test_search_allele_gene_associations_preserves_all_exact_matches(mock_sessio
     mock_session_factory.return_value = session
     session.execute.return_value.fetchall.return_value = [
         (
-            202511462,
-            4749192,
-            "WB:WBVar00000001",
-            5277082,
-            "WB:WBGene00003883",
-            123,
-            False,
-            False,
-        ),
-        (
             202511999,
             4749192,
             "WB:WBVar00000001",
             5277082,
             "WB:WBGene00003883",
             456,
+            False,
+            False,
+        ),
+        (
+            202511462,
+            4749192,
+            "WB:WBVar00000001",
+            5277082,
+            "WB:WBGene00003883",
+            123,
             False,
             False,
         ),
@@ -81,7 +82,7 @@ def test_search_allele_gene_associations_preserves_all_exact_matches(mock_sessio
         limit=5,
     )
 
-    assert [result.association_id for result in results] == [202511462, 202511999]
+    assert [result.association_id for result in results] == [202511999, 202511462]
     assert results[0].allele_id == 4749192
     assert results[0].gene_id == 5277082
     sql = str(session.execute.call_args.args[0])
