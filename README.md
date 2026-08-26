@@ -312,17 +312,18 @@ for allele in wb_alleles:
 # Get a specific allele through the database source. The returned id is the
 # durable public.allele / biologicalentity integer ID.
 db_client = AGRCurationAPIClient(data_source="db")
-allele = db_client.get_allele("WB:WBVar00001234")
+allele = db_client.get_allele("WB:WBVar00000001")
 if allele:
     print(f"Allele database ID: {allele.id}")
 
 # Preserve zero/one/multiple outcomes when resolving an existing association.
-# Callers that require an unambiguous target should proceed only for one result.
+# Callers that require an unambiguous target should proceed only for one result
+# whose durable entity IDs agree with entities resolved separately.
 associations = db_client.search_allele_gene_associations(
     "WB:WBVar00000001",
     "WB:WBGene00003883",
 )
-if len(associations) == 1:
+if allele and len(associations) == 1 and associations[0].allele_id == allele.id:
     print(f"Association database ID: {associations[0].association_id}")
 ```
 

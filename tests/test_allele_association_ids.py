@@ -45,7 +45,7 @@ def test_get_allele_returns_durable_database_id(mock_session_factory, db_methods
     sql = str(session.execute.call_args.args[0])
     assert "be.id" in sql
     assert "be.curie = :allele_id" in sql
-    assert "(be.primaryexternalid = :allele_id) DESC" in sql
+    assert "(be.primaryexternalid = :allele_id) IS TRUE DESC" in sql
     session.close.assert_called_once()
 
 

@@ -774,7 +774,7 @@ class DatabaseMethods:
             WHERE
                 (be.primaryexternalid = :allele_id OR be.curie = :allele_id)
             ORDER BY
-                (be.primaryexternalid = :allele_id) DESC,
+                (be.primaryexternalid = :allele_id) IS TRUE DESC,
                 be.id
             LIMIT 1
             """)
@@ -829,6 +829,8 @@ class DatabaseMethods:
 
         Returning a list preserves no-match and multiple-match outcomes so callers
         can require an unambiguous association before using its durable integer ID.
+        When an allele or gene was resolved separately, callers must also compare
+        its durable ID with the corresponding ID on the selected association.
         """
         allele_identifier = allele_identifier.strip()
         gene_identifier = gene_identifier.strip()
