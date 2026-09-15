@@ -33,6 +33,49 @@ cd agr_curation_api_client
 make install-dev
 ```
 
+## Bounded allele candidates (0.15.0)
+
+The database client provides `search_allele_candidates()` and
+`get_allele_candidate_details()` without changing the existing `get_allele()` API.
+
+```python
+result = db.search_allele_candidates(
+    "H2-Ab1", taxon_curie="NCBITaxon:10090", gene_identifier="MGI:103070",
+    attribution_hint="Cyagen", functional_impact_hint="conditional_ready",
+    limit=20, discovery_limit=200,
+)
+details = db.get_allele_candidate_details(["MGI:7584221"])
+```
+
+Candidates include official symbol/full name, synonyms, verified `is_allele_of`
+gene associations, functional impacts, mutation types, and ranking reasons.
+An explicit gene ID or exact gene symbol scopes discovery to that gene's active,
+public allele associations. Taxon is also a hard scope. The literal query is
+not rewritten; `%` and `_` are treated literally. Attribution text in full names
+and structured functional impacts are soft ranking clues, never exclusion rules.
+Missing annotations are unknown, not evidence against a candidate. Every search
+candidate remains `identity_status="unconfirmed"`, including exact text matches.
+
+`coverage` distinguishes the bounded discovered set from the displayed subset.
+`discovery_capped` means additional database matches may exist; `display_capped`
+means discovered candidates were omitted from this response. `database_total`
+is deliberately unset rather than presenting a capped count as an exact total.
+`detail_missing_count` reports candidates missing from the subsequent detail
+query. `annotations_capped` identifies truncated annotation lists per candidate.
+Refine the explicit scope/clues, increase the bounded budget when justified, or
+fetch particular identifiers; this API does not automatically exhaust all pages.
+Database failures propagate to callers and are not reported as zero matches.
+
+Operational environment settings (positive integers):
+
+| Setting | Default | Purpose |
+| --- | ---: | --- |
+| `AGR_ALLELE_DISPLAY_LIMIT` | 20 | Candidates returned to the caller |
+| `AGR_ALLELE_DISCOVERY_LIMIT` | 200 | Candidates enriched before ranking |
+| `AGR_ALLELE_DISCOVERY_MAX` | 1000 | Maximum display/discovery/detail batch |
+| `AGR_ALLELE_ANNOTATION_LIMIT` | 20 | Entries per candidate annotation list |
+| `AGR_ALLELE_QUERY_TIMEOUT_MS` | 15000 | Transaction-local SQL statement timeout |
+
 ## Authentication
 
 The client supports automatic Okta token generation using the same environment variables as other AGR services:
