@@ -723,6 +723,16 @@ class DatabaseMethods:
         finally:
             session.close()
 
+    def search_allele_candidates(self, search_pattern: str, **kwargs: Any) -> Dict[str, Any]:
+        """Bounded rich allele discovery; see allele_candidates.search_allele_candidates."""
+        from .allele_candidates import search_allele_candidates
+        return search_allele_candidates(self, search_pattern, **kwargs)
+
+    def get_allele_candidate_details(self, allele_ids: Sequence[str]) -> List[Dict[str, Any]]:
+        """Return rich active allele facts, including synonyms, genes, impacts and mutation types."""
+        from .allele_candidates import get_allele_candidate_details
+        return get_allele_candidate_details(self, allele_ids)
+
     def get_allele(self, allele_id: str) -> Optional[Allele]:
         """Get a specific allele by ID from the database.
 
