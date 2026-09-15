@@ -23,7 +23,8 @@ def _prepare(session: Any) -> None:
 
 
 _DETAIL_SQL = """
-SELECT be.primaryexternalid AS curie, taxon.curie AS taxon,
+SELECT be.id AS database_id, COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(be.curie, '')) AS curie,
+       taxon.curie AS taxon,
        (SELECT sa.displaytext FROM slotannotation sa WHERE sa.singleallele_id=be.id
         AND sa.slotannotationtype='AlleleSymbolSlotAnnotation' AND NOT sa.obsolete AND NOT sa.internal
         ORDER BY sa.id LIMIT 1) AS symbol,
@@ -37,7 +38,7 @@ SELECT be.primaryexternalid AS curie, taxon.curie AS taxon,
         JOIN slotannotation_vocabularyterm sv ON sv.slotannotation_id=sa.id
         JOIN vocabularyterm vt ON vt.id=sv.functionalimpacts_id
         WHERE sa.singleallele_id=be.id AND sa.slotannotationtype='AlleleFunctionalImpactSlotAnnotation'
-        AND NOT sa.obsolete AND NOT sa.internal AND NOT vt.obsolete
+        AND NOT sa.obsolete AND NOT sa.internal AND NOT vt.obsolete AND vt.name IS NOT NULL
         ORDER BY vt.name LIMIT :annotation_probe) AS functional_impacts,
        (SELECT COALESCE(jsonb_agg(m), '[]'::jsonb) FROM (
         SELECT DISTINCT ot.curie, ot.name FROM slotannotation sa
@@ -63,13 +64,17 @@ ORDER BY be.primaryexternalid
 """
 
 
-def _details(session: Any, identifiers: Sequence[str]) -> List[Dict[str, Any]]:
+def _details(session: Any, identifiers: Sequence[Any], *, by_database_id: bool = False) -> List[Dict[str, Any]]:
     annotation_limit = _limit("AGR_ALLELE_ANNOTATION_LIMIT", 20)
     rows = (
         session.execute(
             text(
                 _DETAIL_SQL.format(
-                    identity_filter="(be.primaryexternalid = ANY(:identifiers) OR be.curie = ANY(:identifiers))"
+                    identity_filter=(
+                        "be.id = ANY(:identifiers)"
+                        if by_database_id
+                        else "(be.primaryexternalid = ANY(:identifiers) OR be.curie = ANY(:identifiers))"
+                    )
                 )
             ),
             {"identifiers": list(identifiers), "annotation_probe": annotation_limit + 1},
@@ -82,7 +87,7 @@ def _details(session: Any, identifiers: Sequence[str]) -> List[Dict[str, Any]]:
         candidate = dict(row)
         capped = []
         for field in ("synonyms", "functional_impacts", "mutation_types", "genes"):
-            values = list(candidate.get(field) or [])
+            values = [value for value in (candidate.get(field) or []) if value is not None]
             if len(values) > annotation_limit:
                 capped.append(field)
             candidate[field] = values[:annotation_limit]
@@ -101,7 +106,10 @@ def get_allele_candidate_details(db: Any, identifiers: Sequence[str]) -> List[Di
     session = db._create_session()
     try:
         _prepare(session)
-        return _details(session, identifiers)
+        rows = _details(session, identifiers)
+        for row in rows:
+            row.pop("database_id", None)
+        return rows
     finally:
         session.close()
 
@@ -151,25 +159,41 @@ def search_allele_candidates(
         "synonyms": include_synonyms,
         "probe": budget + 1,
     }
+    # A supplied gene should drive indexed per-allele name lookup, rather than
+    # scanning all short substring matches and applying the gene filter afterward.
+    # OFFSET 0 keeps PostgreSQL from flattening the lateral lookup back into the
+    # global substring scan; selected_gene_ids materializes only exact gene matches.
+    names_from = (
+        """gene_scope scope JOIN LATERAL (
+          SELECT annotations.* FROM slotannotation annotations
+          WHERE annotations.singleallele_id=scope.id OFFSET 0
+        ) sa ON TRUE"""
+        if gene_identifier
+        else "slotannotation sa"
+    )
     sql = text("""
-    WITH gene_scope AS (
+    WITH selected_gene_ids AS MATERIALIZED (
+      SELECT id FROM biologicalentity WHERE primaryexternalid=:gene
+      UNION SELECT id FROM biologicalentity WHERE curie=:gene
+      UNION SELECT singlegene_id FROM slotannotation
+        WHERE slotannotationtype='GeneSymbolSlotAnnotation' AND NOT obsolete AND NOT internal
+          AND upper(displaytext)=upper(:gene)
+    ), gene_scope AS (
       SELECT aga.alleleassociationsubject_id AS id FROM allelegeneassociation aga
+      JOIN selected_gene_ids selected ON selected.id=aga.allelegeneassociationobject_id
       JOIN biologicalentity gb ON gb.id=aga.allelegeneassociationobject_id
       JOIN gene ON gene.id=gb.id JOIN vocabularyterm rel ON rel.id=aga.relation_id
       JOIN biologicalentity ab ON ab.id=aga.alleleassociationsubject_id
       WHERE :gene IS NOT NULL AND rel.name='is_allele_of'
         AND NOT aga.obsolete AND NOT aga.internal AND NOT gb.obsolete AND NOT gb.internal
-        AND gb.taxon_id=ab.taxon_id AND (gb.primaryexternalid=:gene OR gb.curie=:gene OR gb.id IN (
-          SELECT gs.singlegene_id FROM slotannotation gs
-          WHERE gs.slotannotationtype='GeneSymbolSlotAnnotation' AND NOT gs.obsolete AND NOT gs.internal
-          AND upper(gs.displaytext)=upper(:gene)))
+        AND gb.taxon_id=ab.taxon_id
     ), matches AS (
       SELECT be.id, 0 AS literal_rank, :query AS matched_text FROM biologicalentity be
       WHERE :query <> '' AND (be.primaryexternalid=:query OR be.curie=:query)
       UNION ALL
       SELECT sa.singleallele_id, CASE WHEN upper(sa.displaytext)=upper(:query) THEN 1
              WHEN upper(sa.displaytext) LIKE upper(:prefix) THEN 2 ELSE 3 END, sa.displaytext
-      FROM slotannotation sa WHERE :query <> '' AND sa.singleallele_id IS NOT NULL
+      FROM {names_from} WHERE :query <> '' AND sa.singleallele_id IS NOT NULL
         AND NOT sa.obsolete AND NOT sa.internal AND upper(sa.displaytext) LIKE upper(:contains)
         AND (sa.slotannotationtype IN ('AlleleSymbolSlotAnnotation','AlleleFullNameSlotAnnotation')
           OR (:synonyms AND sa.slotannotationtype='AlleleSynonymSlotAnnotation'))
@@ -178,25 +202,27 @@ def search_allele_candidates(
     ), distinct_matches AS (
       SELECT DISTINCT ON (id) id, literal_rank, matched_text FROM matches ORDER BY id, literal_rank, matched_text
     )
-    SELECT be.primaryexternalid AS curie, m.literal_rank, m.matched_text
+    SELECT be.id AS database_id, m.literal_rank, m.matched_text
     FROM distinct_matches m JOIN biologicalentity be ON be.id=m.id JOIN allele a ON a.id=be.id
     LEFT JOIN ontologyterm taxon ON taxon.id=be.taxon_id
     WHERE NOT be.obsolete AND NOT be.internal AND (:taxon IS NULL OR taxon.curie=:taxon)
       AND (:gene IS NULL OR be.id IN (SELECT id FROM gene_scope))
-    ORDER BY m.literal_rank, be.primaryexternalid LIMIT :probe
-    """)
+    ORDER BY m.literal_rank, COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(be.curie, '')), be.id LIMIT :probe
+    """.format(names_from=names_from))
     session = db._create_session()
     try:
         _prepare(session)
         discovered = [dict(row) for row in session.execute(sql, params).mappings().all()]
         capped = len(discovered) > budget
         discovered = discovered[:budget]
-        candidates = _details(session, [row["curie"] for row in discovered]) if discovered else []
-        ranks = {row["curie"]: row["literal_rank"] for row in discovered}
-        matched = {row["curie"]: row["matched_text"] for row in discovered}
+        candidates = (
+            _details(session, [row["database_id"] for row in discovered], by_database_id=True) if discovered else []
+        )
+        ranks = {row["database_id"]: row["literal_rank"] for row in discovered}
+        matched = {row["database_id"]: row["matched_text"] for row in discovered}
         for candidate in candidates:
             reasons = []
-            if ranks[candidate["curie"]] < 2:
+            if ranks[candidate["database_id"]] < 2:
                 reasons.append("exact_identifier_or_name")
             if gene_identifier and any(
                 gene_identifier.casefold() in {(g.get("curie") or "").casefold(), (g.get("symbol") or "").casefold()}
@@ -216,17 +242,20 @@ def search_allele_candidates(
                 2: "starts_with",
                 3: "contains",
                 4: "gene_association",
-            }[ranks[candidate["curie"]]]
-            candidate["matched_text"] = matched[candidate["curie"]]
+            }[ranks[candidate["database_id"]]]
+            candidate["matched_text"] = matched[candidate["database_id"]]
             candidate["identity_status"] = "unconfirmed"
         candidates.sort(
             key=lambda c: (
-                ranks[c["curie"]] if ranks[c["curie"]] < 2 else 2,
+                ranks[c["database_id"]] if ranks[c["database_id"]] < 2 else 2,
                 -len(c["match_reasons"]),
-                ranks[c["curie"]],
-                c["curie"],
+                ranks[c["database_id"]],
+                c["curie"] or "",
+                c["database_id"],
             )
         )
+        for candidate in candidates:
+            candidate.pop("database_id", None)
         return {
             "candidates": candidates[:limit],
             "coverage": {

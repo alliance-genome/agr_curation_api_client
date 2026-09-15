@@ -12,11 +12,17 @@ def fixture_db(count=31, ranks=None):
     db = MagicMock()
     db._create_session.return_value = session
     rows = [
-        {"curie": f"MGI:{i}", "literal_rank": (ranks or {}).get(i, 2), "matched_text": f"Gene allele {i}"}
+        {
+            "database_id": i,
+            "curie": f"MGI:{i}",
+            "literal_rank": (ranks or {}).get(i, 2),
+            "matched_text": f"Gene allele {i}",
+        }
         for i in range(count)
     ]
     details = [
         {
+            "database_id": row["database_id"],
             "curie": row["curie"],
             "taxon": "NCBITaxon:10090",
             "symbol": row["matched_text"],
@@ -84,6 +90,8 @@ def test_parameterized_scoped_sql_and_literal_wildcards():
     assert "gb.taxon_id=ab.taxon_id" in str(sql) and "rel.name='is_allele_of'" in str(sql)
     assert ":gene IS NULL OR be.id IN" in str(sql)
     assert "upper(sa.displaytext) LIKE" in str(sql)
+    assert "selected_gene_ids AS MATERIALIZED" in str(sql)
+    assert "gene_scope scope JOIN LATERAL" in str(sql)
 
 
 def test_outage_is_not_no_match_and_session_closes():
@@ -116,3 +124,51 @@ def test_detail_annotations_are_bounded_and_reported(monkeypatch):
     result = get_allele_candidate_details(db, ["MGI:0"])
     assert result[0]["synonyms"] == ["a", "b"]
     assert result[0]["annotations_capped"] == ["synonyms"]
+
+
+def test_discovery_details_join_by_stable_id_not_overlapping_text_identifiers():
+    db, session, _, details = fixture_db(2)
+    # The same displayed identifier can originate in different identifier columns.
+    # Separate database rows must retain their own rank and never fetch a third row
+    # through the public detail endpoint's primaryexternalid OR curie predicate.
+    details[1]["curie"] = details[0]["curie"]
+    result = search_allele_candidates(db, "Gene")
+    sql, params = session.execute.call_args_list[2].args
+    assert "be.id = ANY(:identifiers)" in str(sql)
+    assert "be.curie = ANY(:identifiers)" not in str(sql)
+    assert params["identifiers"] == [0, 1]
+    assert len(result["candidates"]) == 2
+    assert result["coverage"]["detail_missing_count"] == 0
+    assert all("database_id" not in row for row in result["candidates"])
+
+
+def test_curie_only_and_unidentified_records_do_not_collapse_discovery_keys():
+    db, session, _, details = fixture_db(3)
+    details[0]["curie"] = "curie-only-allele"
+    details[1]["curie"] = None
+    result = search_allele_candidates(db, "Gene")
+    assert len(result["candidates"]) == 3
+    assert result["coverage"]["detail_missing_count"] == 0
+    sql, params = session.execute.call_args_list[2].args
+    assert "COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(be.curie, '')) AS curie" in str(sql)
+    assert params["identifiers"] == [0, 1, 2]
+
+
+def test_public_detail_lookup_accepts_both_identifier_columns():
+    db, session, responses, details = fixture_db(1)
+    responses[1].mappings.return_value.all.return_value = details
+    session.execute.side_effect = responses[:2]
+    result = get_allele_candidate_details(db, ["alternate-curie"])
+    sql, params = session.execute.call_args_list[1].args
+    assert "be.primaryexternalid = ANY(:identifiers) OR be.curie = ANY(:identifiers)" in str(sql)
+    assert params["identifiers"] == ["alternate-curie"]
+    assert "database_id" not in result[0]
+
+
+def test_null_impact_names_are_missing_information_not_a_ranking_crash():
+    db, session, _, details = fixture_db(1)
+    details[0]["functional_impacts"] = [None, "conditional_ready"]
+    result = search_allele_candidates(db, "Gene", functional_impact_hint="conditional_ready")
+    assert result["candidates"][0]["functional_impacts"] == ["conditional_ready"]
+    assert "structured_functional_impact" in result["candidates"][0]["match_reasons"]
+    assert "vt.name IS NOT NULL" in str(session.execute.call_args_list[2].args[0])

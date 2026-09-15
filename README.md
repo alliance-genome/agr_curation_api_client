@@ -66,6 +66,16 @@ Refine the explicit scope/clues, increase the bounded budget when justified, or
 fetch particular identifiers; this API does not automatically exhaust all pages.
 Database failures propagate to callers and are not reported as zero matches.
 
+Discovery joins details by the database row ID, not by interchangeable identifier
+columns. Displayed identifiers prefer a nonempty primary external ID and fall back
+to a nonempty CURIE. Missing identifiers do not collapse distinct database rows;
+null functional-impact names are omitted rather than interpreted as impact facts.
+Explicit gene searches start from exact gene matches and use indexed per-allele
+annotation lookups, including for short literal text. Unscoped substring searches
+can still examine many database rows: the discovery budget bounds enrichment and
+response size, not the number of rows scanned. The statement timeout remains the
+execution safety bound, and short-query substring behavior is preserved.
+
 Operational environment settings (positive integers):
 
 | Setting | Default | Purpose |
