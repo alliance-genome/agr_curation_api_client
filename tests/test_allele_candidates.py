@@ -92,6 +92,7 @@ def test_parameterized_scoped_sql_and_literal_wildcards():
     assert "upper(sa.displaytext) LIKE" in str(sql)
     assert "selected_gene_ids AS MATERIALIZED" in str(sql)
     assert "gene_scope scope JOIN LATERAL" in str(sql)
+    assert "SELECT DISTINCT aga.alleleassociationsubject_id AS id" in str(sql)
 
 
 def test_outage_is_not_no_match_and_session_closes():
@@ -172,3 +173,12 @@ def test_null_impact_names_are_missing_information_not_a_ranking_crash():
     assert result["candidates"][0]["functional_impacts"] == ["conditional_ready"]
     assert "structured_functional_impact" in result["candidates"][0]["match_reasons"]
     assert "vt.name IS NOT NULL" in str(session.execute.call_args_list[2].args[0])
+
+
+def test_curie_only_gene_keeps_verified_association_reason():
+    db, session, _, details = fixture_db(1)
+    details[0]["genes"] = [{"curie": "gene-curie-only", "symbol": None, "relation": "is_allele_of"}]
+    result = search_allele_candidates(db, "Gene", gene_identifier="gene-curie-only")
+    assert "verified_is_allele_of" in result["candidates"][0]["match_reasons"]
+    sql = str(session.execute.call_args_list[2].args[0])
+    assert "COALESCE(NULLIF(gb.primaryexternalid, ''), NULLIF(gb.curie, '')) AS curie" in sql

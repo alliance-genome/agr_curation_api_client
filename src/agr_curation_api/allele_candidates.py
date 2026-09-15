@@ -48,7 +48,8 @@ SELECT be.id AS database_id, COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(b
         AND NOT sa.obsolete AND NOT sa.internal AND NOT ot.obsolete
         ORDER BY ot.curie, ot.name LIMIT :annotation_probe) m) AS mutation_types,
        (SELECT COALESCE(jsonb_agg(g), '[]'::jsonb) FROM (
-        SELECT DISTINCT gb.primaryexternalid AS curie, gs.displaytext AS symbol, rel.name AS relation
+        SELECT DISTINCT COALESCE(NULLIF(gb.primaryexternalid, ''), NULLIF(gb.curie, '')) AS curie,
+          gs.displaytext AS symbol, rel.name AS relation
         FROM allelegeneassociation aga JOIN biologicalentity gb ON gb.id=aga.allelegeneassociationobject_id
         JOIN gene ON gene.id=gb.id JOIN vocabularyterm rel ON rel.id=aga.relation_id
         LEFT JOIN slotannotation gs ON gs.singlegene_id=gb.id AND gs.slotannotationtype='GeneSymbolSlotAnnotation'
@@ -56,7 +57,7 @@ SELECT be.id AS database_id, COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(b
         WHERE aga.alleleassociationsubject_id=be.id AND rel.name='is_allele_of'
           AND NOT aga.obsolete AND NOT aga.internal AND NOT gb.obsolete AND NOT gb.internal
           AND gb.taxon_id=be.taxon_id
-        ORDER BY gb.primaryexternalid, gs.displaytext, rel.name LIMIT :annotation_probe) g) AS genes
+        ORDER BY curie, gs.displaytext, rel.name LIMIT :annotation_probe) g) AS genes
 FROM biologicalentity be JOIN allele a ON a.id=be.id
 LEFT JOIN ontologyterm taxon ON taxon.id=be.taxon_id
 WHERE NOT be.obsolete AND NOT be.internal AND {identity_filter}
@@ -179,7 +180,7 @@ def search_allele_candidates(
         WHERE slotannotationtype='GeneSymbolSlotAnnotation' AND NOT obsolete AND NOT internal
           AND upper(displaytext)=upper(:gene)
     ), gene_scope AS (
-      SELECT aga.alleleassociationsubject_id AS id FROM allelegeneassociation aga
+      SELECT DISTINCT aga.alleleassociationsubject_id AS id FROM allelegeneassociation aga
       JOIN selected_gene_ids selected ON selected.id=aga.allelegeneassociationobject_id
       JOIN biologicalentity gb ON gb.id=aga.allelegeneassociationobject_id
       JOIN gene ON gene.id=gb.id JOIN vocabularyterm rel ON rel.id=aga.relation_id
