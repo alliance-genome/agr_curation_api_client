@@ -33,7 +33,7 @@ cd agr_curation_api_client
 make install-dev
 ```
 
-## Bounded allele candidates (0.15.0)
+## Bounded allele candidates
 
 The database client provides `search_allele_candidates()` and
 `get_allele_candidate_details()` without changing the existing `get_allele()` API.
@@ -53,6 +53,12 @@ An explicit gene ID or exact gene symbol scopes discovery to that gene's active,
 public allele associations. Taxon is also a hard scope. The literal query is
 not rewritten; `%` and `_` are treated literally. Attribution text in full names
 and structured functional impacts are soft ranking clues, never exclusion rules.
+All ranking evidence is evaluated in SQL before the discovery cutoff. Exact IDs
+precede exact names/synonyms; other literal and gene matches are prioritized by
+supported clues, then literal rank, displayed identifier and database ID. Only
+the bounded discovered set receives full detail hydration. Ranking checks all
+eligible functional-impact/gene annotations, even when the returned lists are
+capped; `match_reasons` can therefore cite evidence beyond a capped detail list.
 Missing annotations are unknown, not evidence against a candidate. Every search
 candidate remains `identity_status="unconfirmed"`, including exact text matches.
 
@@ -81,10 +87,18 @@ Operational environment settings (positive integers):
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | `AGR_ALLELE_DISPLAY_LIMIT` | 20 | Candidates returned to the caller |
-| `AGR_ALLELE_DISCOVERY_LIMIT` | 200 | Candidates enriched before ranking |
+| `AGR_ALLELE_DISCOVERY_LIMIT` | 200 | Ranked candidates enriched with details |
 | `AGR_ALLELE_DISCOVERY_MAX` | 1000 | Maximum display/discovery/detail batch |
 | `AGR_ALLELE_ANNOTATION_LIMIT` | 20 | Entries per candidate annotation list |
 | `AGR_ALLELE_QUERY_TIMEOUT_MS` | 15000 | Transaction-local SQL statement timeout |
+
+### SQL selection regression tests
+
+The normal Tests workflow supplies a disposable PostgreSQL service for
+`tests/test_allele_candidate_selection_sql.py`. To run locally, set
+`AGR_CLIENT_TEST_POSTGRES_URL` to a disposable database and run that file with
+pytest. Tests create transaction-local temporary tables and roll back each test;
+they require no private traces, curation credentials or production data.
 
 ## Authentication
 

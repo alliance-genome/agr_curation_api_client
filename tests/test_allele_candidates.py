@@ -34,6 +34,18 @@ def fixture_db(count=31, ranks=None):
         }
         for i, row in enumerate(rows)
     ]
+    for row in rows:
+        i = row["database_id"]
+        row.update(attribution_match=i in (29, 30), impact_match=i == 29, gene_match=True)
+    rows.sort(
+        key=lambda row: (
+            min(row["literal_rank"], 2),
+            -(int(row["attribution_match"]) + int(row["impact_match"]) + int(row["gene_match"])),
+            row["literal_rank"],
+            row["curie"],
+            row["database_id"],
+        )
+    )
     responses = [MagicMock(), MagicMock(), MagicMock()]
     responses[1].mappings.return_value.all.return_value = rows
     responses[2].mappings.return_value.all.return_value = details
@@ -152,7 +164,7 @@ def test_curie_only_and_unidentified_records_do_not_collapse_discovery_keys():
     assert result["coverage"]["detail_missing_count"] == 0
     sql, params = session.execute.call_args_list[2].args
     assert "COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(be.curie, '')) AS curie" in str(sql)
-    assert params["identifiers"] == [0, 1, 2]
+    assert set(params["identifiers"]) == {0, 1, 2}
 
 
 def test_public_detail_lookup_accepts_both_identifier_columns():
@@ -167,8 +179,10 @@ def test_public_detail_lookup_accepts_both_identifier_columns():
 
 
 def test_null_impact_names_are_missing_information_not_a_ranking_crash():
-    db, session, _, details = fixture_db(1)
+    db, session, responses, details = fixture_db(1)
+    responses[1].mappings.return_value.all.return_value[0]["impact_match"] = True
     details[0]["functional_impacts"] = [None, "conditional_ready"]
+
     result = search_allele_candidates(db, "Gene", functional_impact_hint="conditional_ready")
     assert result["candidates"][0]["functional_impacts"] == ["conditional_ready"]
     assert "structured_functional_impact" in result["candidates"][0]["match_reasons"]

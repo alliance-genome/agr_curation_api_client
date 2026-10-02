@@ -79,7 +79,14 @@ def test_allele_identifier_helpers_against_live_curation_db():
     allele = db.get_allele("WB:WBVar00000001")
     assert allele is not None
     assert allele.id is not None
-    assert allele.curie == "WB:WBVar00000001"
+    assert allele.primaryExternalId == "WB:WBVar00000001"
+    # Database CURIEs and provider IDs may differ (e.g. AGRKB versus WB).
+    # Verify the current database identity rather than assuming equality.
+    assert allele.curie == scalar_or_none(
+        db,
+        "SELECT COALESCE(NULLIF(curie, ''), primaryexternalid) "
+        "FROM biologicalentity WHERE primaryexternalid = 'WB:WBVar00000001'",
+    )
 
     associations = db.search_allele_gene_associations(
         allele_identifier="WB:WBVar00000001",
@@ -88,7 +95,11 @@ def test_allele_identifier_helpers_against_live_curation_db():
     assert len(associations) == 1
     assert associations[0].allele_id == allele.id
     assert associations[0].allele_curie == allele.curie
-    assert associations[0].gene_curie == "WB:WBGene00003883"
+    assert associations[0].gene_curie == scalar_or_none(
+        db,
+        "SELECT COALESCE(NULLIF(curie, ''), primaryexternalid) "
+        "FROM biologicalentity WHERE primaryexternalid = 'WB:WBGene00003883'",
+    )
 
 
 def test_literature_reference_helpers_against_live_literature_db():

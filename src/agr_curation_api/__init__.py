@@ -46,7 +46,7 @@ from .db_methods import (
     GENE_LIKE_SO_TERM_CURIES,
 )
 
-__version__ = "0.15.0"
+__version__ = "0.15.1"
 __all__ = [
     "AGRCurationAPIClient",
     "DataSource",

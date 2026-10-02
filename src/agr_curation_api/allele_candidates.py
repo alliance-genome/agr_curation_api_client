@@ -130,8 +130,9 @@ def search_allele_candidates(
     """Discover literal matches or alleles of an explicitly supplied exact gene ID/symbol.
 
     Attribution/full-name text and structured functional impact are soft priorities,
-    never completeness filters. Counts describe the bounded discovered set, not an
-    exact database total when discovery_capped is true. No candidate is confirmed.
+    evaluated before discovery truncation, never completeness filters. Counts
+    describe the bounded discovered set, not an exact database total when
+    discovery_capped is true. No candidate is confirmed.
     """
     search_pattern = search_pattern.strip()
     gene_identifier = (gene_identifier or "").strip() or None
@@ -159,6 +160,11 @@ def search_allele_candidates(
         "gene": gene_identifier,
         "synonyms": include_synonyms,
         "probe": budget + 1,
+        "attribution": attribution_hint,
+        "impact": functional_impact_hint,
+        "attribution_contains": "%"
+        + (attribution_hint or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        + "%",
     }
     # A supplied gene should drive indexed per-allele name lookup, rather than
     # scanning all short substring matches and applying the gene filter afterward.
@@ -172,6 +178,10 @@ def search_allele_candidates(
         if gene_identifier
         else "slotannotation sa"
     )
+    # Materialize compact hint ID sets once. Attribution LIKE uses the existing
+    # upper(displaytext) trigram index; per-candidate full-name probes would
+    # turn broad searches into repeated annotation scans. Match only the first
+    # public full name, matching the canonical name returned by _details.
     sql = text("""
     WITH selected_gene_ids AS MATERIALIZED (
       SELECT id FROM biologicalentity WHERE primaryexternalid=:gene
@@ -202,13 +212,53 @@ def search_allele_candidates(
       SELECT id, 4, :gene FROM gene_scope
     ), distinct_matches AS (
       SELECT DISTINCT ON (id) id, literal_rank, matched_text FROM matches ORDER BY id, literal_rank, matched_text
-    )
-    SELECT be.id AS database_id, m.literal_rank, m.matched_text
+    ), eligible AS (
+    SELECT be.id AS database_id, m.literal_rank, m.matched_text,
+           COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(be.curie, '')) AS curie
     FROM distinct_matches m JOIN biologicalentity be ON be.id=m.id JOIN allele a ON a.id=be.id
     LEFT JOIN ontologyterm taxon ON taxon.id=be.taxon_id
     WHERE NOT be.obsolete AND NOT be.internal AND (:taxon IS NULL OR taxon.curie=:taxon)
       AND (:gene IS NULL OR be.id IN (SELECT id FROM gene_scope))
-    ORDER BY m.literal_rank, COALESCE(NULLIF(be.primaryexternalid, ''), NULLIF(be.curie, '')), be.id LIMIT :probe
+    ), attribution_matches AS MATERIALIZED (
+      SELECT DISTINCT sa.singleallele_id AS id FROM slotannotation sa
+      WHERE :attribution IS NOT NULL AND sa.singleallele_id IS NOT NULL
+        AND sa.slotannotationtype='AlleleFullNameSlotAnnotation' AND NOT sa.obsolete AND NOT sa.internal
+        AND upper(sa.displaytext) LIKE upper(:attribution_contains)
+        AND NOT EXISTS (
+          SELECT 1 FROM slotannotation earlier WHERE earlier.singleallele_id=sa.singleallele_id
+            AND earlier.slotannotationtype='AlleleFullNameSlotAnnotation'
+            AND NOT earlier.obsolete AND NOT earlier.internal AND earlier.id < sa.id
+        )
+    ), impact_matches AS MATERIALIZED (
+      SELECT DISTINCT sa.singleallele_id AS id FROM slotannotation sa
+      JOIN slotannotation_vocabularyterm sv ON sv.slotannotation_id=sa.id
+      JOIN vocabularyterm vt ON vt.id=sv.functionalimpacts_id
+      WHERE :impact IS NOT NULL AND sa.singleallele_id IS NOT NULL
+        AND sa.slotannotationtype='AlleleFunctionalImpactSlotAnnotation'
+        AND NOT sa.obsolete AND NOT sa.internal AND NOT vt.obsolete
+        AND lower(vt.name)=lower(:impact)
+    ), ranked AS (
+      SELECT e.*, e.database_id IN (SELECT id FROM attribution_matches) AS attribution_match,
+        e.database_id IN (SELECT id FROM impact_matches) AS impact_match,
+        (:gene IS NOT NULL AND EXISTS (
+          SELECT 1 FROM allelegeneassociation aga
+          JOIN biologicalentity gb ON gb.id=aga.allelegeneassociationobject_id
+          JOIN gene ON gene.id=gb.id JOIN vocabularyterm rel ON rel.id=aga.relation_id
+          JOIN biologicalentity ab ON ab.id=aga.alleleassociationsubject_id
+          WHERE aga.alleleassociationsubject_id=e.database_id AND rel.name='is_allele_of'
+            AND NOT aga.obsolete AND NOT aga.internal AND NOT gb.obsolete AND NOT gb.internal
+            AND gb.taxon_id=ab.taxon_id
+            AND (lower(COALESCE(NULLIF(gb.primaryexternalid, ''), NULLIF(gb.curie, '')))=lower(:gene)
+              OR EXISTS (SELECT 1 FROM slotannotation gs WHERE gs.singlegene_id=gb.id
+                AND gs.slotannotationtype='GeneSymbolSlotAnnotation' AND NOT gs.obsolete AND NOT gs.internal
+                AND lower(gs.displaytext)=lower(:gene)))
+        )) AS gene_match
+      FROM eligible e
+    )
+    SELECT * FROM ranked
+    ORDER BY LEAST(literal_rank, 2),
+      (CAST(attribution_match AS integer) + CAST(impact_match AS integer) + CAST(gene_match AS integer)) DESC,
+      literal_rank, COALESCE(curie, ''), database_id LIMIT :probe
     """.format(names_from=names_from))
     session = db._create_session()
     try:
@@ -221,21 +271,19 @@ def search_allele_candidates(
         )
         ranks = {row["database_id"]: row["literal_rank"] for row in discovered}
         matched = {row["database_id"]: row["matched_text"] for row in discovered}
+        ranking = {row["database_id"]: row for row in discovered}
         for candidate in candidates:
             reasons = []
             if ranks[candidate["database_id"]] < 2:
                 reasons.append("exact_identifier_or_name")
-            if gene_identifier and any(
-                gene_identifier.casefold() in {(g.get("curie") or "").casefold(), (g.get("symbol") or "").casefold()}
-                for g in candidate["genes"]
+            evidence = ranking[candidate["database_id"]]
+            for field, reason in (
+                ("gene_match", "verified_is_allele_of"),
+                ("attribution_match", "full_name_attribution_text"),
+                ("impact_match", "structured_functional_impact"),
             ):
-                reasons.append("verified_is_allele_of")
-            if attribution_hint and attribution_hint.casefold() in (candidate.get("name") or "").casefold():
-                reasons.append("full_name_attribution_text")
-            if functional_impact_hint and functional_impact_hint.casefold() in {
-                v.casefold() for v in candidate["functional_impacts"]
-            }:
-                reasons.append("structured_functional_impact")
+                if evidence[field]:
+                    reasons.append(reason)
             candidate["match_reasons"] = reasons
             candidate["match_type"] = {
                 0: "exact_id",
@@ -246,15 +294,9 @@ def search_allele_candidates(
             }[ranks[candidate["database_id"]]]
             candidate["matched_text"] = matched[candidate["database_id"]]
             candidate["identity_status"] = "unconfirmed"
-        candidates.sort(
-            key=lambda c: (
-                ranks[c["database_id"]] if ranks[c["database_id"]] < 2 else 2,
-                -len(c["match_reasons"]),
-                ranks[c["database_id"]],
-                c["curie"] or "",
-                c["database_id"],
-            )
-        )
+        # Detail SQL has its own order; retain the authoritative discovery order.
+        positions = {row["database_id"]: index for index, row in enumerate(discovered)}
+        candidates.sort(key=lambda candidate: positions[candidate["database_id"]])
         for candidate in candidates:
             candidate.pop("database_id", None)
         return {

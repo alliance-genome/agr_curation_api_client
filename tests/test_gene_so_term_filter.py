@@ -24,6 +24,7 @@ import re
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
+from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql
 
 from agr_curation_api.db_methods import (
@@ -66,10 +67,9 @@ def render_postgres(stmt, params):
     a statement that lost the bindparam renders an unexpanded
     ``__[POSTCOMPILE_so_terms]`` marker and binds no values.
     """
-    compiled = stmt.params(**params).compile(
-        dialect=postgresql.dialect(), compile_kwargs={"render_postcompile": True}
-    )
-    return re.sub(r"\s+", " ", str(compiled)).strip(), dict(compiled.params)
+    compiled = stmt.compile(dialect=postgresql.dialect())
+    expanded = compiled.construct_expanded_state(params)
+    return re.sub(r"\s+", " ", expanded.statement).strip(), dict(expanded.parameters)
 
 
 class TestGeneSOTermFilter(unittest.TestCase):
@@ -341,3 +341,9 @@ class TestGeneSOTermFilterByTaxon(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_database_config_uses_the_installed_postgresql_driver():
+    engine = create_engine(DatabaseConfig().connection_string)
+    assert engine.dialect.driver == "psycopg2"
+    engine.dispose()
