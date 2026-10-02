@@ -66,10 +66,9 @@ def render_postgres(stmt, params):
     a statement that lost the bindparam renders an unexpanded
     ``__[POSTCOMPILE_so_terms]`` marker and binds no values.
     """
-    compiled = stmt.params(**params).compile(
-        dialect=postgresql.dialect(), compile_kwargs={"render_postcompile": True}
-    )
-    return re.sub(r"\s+", " ", str(compiled)).strip(), dict(compiled.params)
+    compiled = stmt.compile(dialect=postgresql.dialect())
+    expanded = compiled.construct_expanded_state(params)
+    return re.sub(r"\s+", " ", expanded.statement).strip(), dict(expanded.parameters)
 
 
 class TestGeneSOTermFilter(unittest.TestCase):
