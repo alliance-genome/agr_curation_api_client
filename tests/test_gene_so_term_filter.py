@@ -24,6 +24,7 @@ import re
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
+from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql
 
 from agr_curation_api.db_methods import (
@@ -340,3 +341,9 @@ class TestGeneSOTermFilterByTaxon(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_database_config_uses_the_installed_postgresql_driver():
+    engine = create_engine(DatabaseConfig().connection_string)
+    assert engine.dialect.driver == "psycopg2"
+    engine.dispose()
