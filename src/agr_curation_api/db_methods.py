@@ -3696,11 +3696,15 @@ class DatabaseMethods:
                 AND ot.obsolete = False
                 """)
             else:  # ancestors
+                # closuresubject_id is the descendant and closureobject_id the ancestor,
+                # so here the node is the subject and the results are the objects. This
+                # used to join the same way as the descendants branch, and so returned
+                # the node's descendants (SCRUM-6787).
                 sql_query = text("""
                 SELECT DISTINCT ot.curie
                 FROM ontologyterm ot
-                JOIN ontologytermclosure otc ON ot.id = otc.closuresubject_id
-                JOIN ontologyterm descendant ON descendant.id = otc.closureobject_id
+                JOIN ontologytermclosure otc ON ot.id = otc.closureobject_id
+                JOIN ontologyterm descendant ON descendant.id = otc.closuresubject_id
                 WHERE descendant.curie = :ontology_node
                 AND ot.obsolete = False
                 """)
