@@ -193,7 +193,7 @@ class DatabaseMethods:
 
         Raises:
             AGRAPIError: if ``ELASTICSEARCH_HOST`` is not configured or the
-                ``elasticsearch`` package is unavailable.
+                ``opensearch-py`` package is unavailable.
         """
         if self._literature_es_client is not None:
             return self._literature_es_client
@@ -204,14 +204,14 @@ class DatabaseMethods:
                 "Literature Elasticsearch is not configured: set ELASTICSEARCH_HOST"
             )
         try:
-            from elasticsearch import Elasticsearch
+            from opensearchpy import OpenSearch
         except ImportError as exc:
             raise AGRAPIError(
-                "elasticsearch package is required for literature reference search"
+                "opensearch-py package is required for literature reference search"
             ) from exc
 
         scheme = "https" if cfg.use_ssl else "http"
-        self._literature_es_client = Elasticsearch(
+        self._literature_es_client = OpenSearch(
             hosts=[f"{scheme}://{cfg.host}:{cfg.port}"],
             timeout=30,
             max_retries=3,

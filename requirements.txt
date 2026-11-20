@@ -16,7 +16,7 @@ black>=23.0.0  # For code formatting
 
 agr_cognito_py==0.1.0
 
-# Literature Elasticsearch client.
-# Pinned to 7.13.x to match agr_literature_service: the 7.14+ and 8.x clients
-# send a versioned Content-Type header that AWS OpenSearch rejects with HTTP 406.
-elasticsearch>=7.13,<7.14
+# Literature search client for the AWS OpenSearch Service domain (engine Elasticsearch_7.10).
+# opensearch-py has no Elastic product check and allows urllib3 2.x; elasticsearch-py 7.14+
+# rejects the domain (build_flavor "oss"), and 7.13.x caps urllib3 below 2.
+opensearch-py>=2.8.0,<4
