@@ -17,6 +17,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Same engine as the AWS OpenSearch Service literature domain (Elasticsearch_7.10).
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
+        env:
+          discovery.type: single-node
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -fsS http://localhost:9200/_cluster/health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
     steps:
     - uses: actions/checkout@v4
     
@@ -35,5 +48,6 @@ jobs:
       env:
         TMP_PATH: /tmp/test_data
         AGR_CLIENT_TEST_POSTGRES_URL: postgresql+psycopg2://postgres@localhost:5432/postgres
+        AGR_CLIENT_TEST_LITERATURE_ES_URL: http://localhost:9200
       run: |
         pytest

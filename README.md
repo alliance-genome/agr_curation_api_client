@@ -575,6 +575,19 @@ The client uses the following environment variables for configuration:
 - `OKTA_CLIENT_ID`: Your Okta client ID (required for automatic authentication)
 - `OKTA_CLIENT_SECRET`: Your Okta client secret (required for automatic authentication)
 
+### Literature Reference Search
+
+`get_literature_reference` and `search_literature_references` (database mode) query the
+literature `references_index` on the AGR AWS OpenSearch Service domain (engine Elasticsearch 7.10)
+through the `opensearch-py` client. The `elasticsearch` Python client is not used: 7.14 and later
+reject non-Elastic servers with a product check, 8.x and later send a versioned Content-Type that
+the domain rejects with HTTP 406, and 7.13 requires `urllib3<2`.
+
+- `ELASTICSEARCH_HOST`: Literature search host (required for literature search)
+- `ELASTICSEARCH_PORT`: Port (default: `443`)
+- `ELASTICSEARCH_SCHEME`: `http` or `https` (default: `https` when the port is 443, otherwise `http`)
+- `ELASTICSEARCH_INDEX`: Index name (default: `references_index`)
+
 ## Development
 
 ### Running Tests
