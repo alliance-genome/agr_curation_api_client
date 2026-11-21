@@ -147,6 +147,7 @@ jobs:
           # Use nohup and disown to prevent process from being killed when step shell exits
           nohup timeout --foreground $TUNNEL_TIMEOUT \
             aws ssm start-session \
+            --reason "gh-${GITHUB_REPOSITORY_ID}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}" \
             --target ${{ steps.db-config.outputs.ssm_instance_id }} \
             --document-name AWS-StartPortForwardingSessionToRemoteHost \
             --parameters '{"host":["${{ steps.db-config.outputs.db_host }}"],"portNumber":["${{ steps.db-config.outputs.db_port }}"],"localPortNumber":["'$LOCAL_PORT'"]}' \
@@ -318,8 +319,8 @@ jobs:
             kill -TERM -- -${{ steps.tunnel.outputs.pid }} 2>/dev/null || true
           fi
 
-          # Also terminate any hanging SSM sessions
-          SESSIONS=$(aws ssm describe-sessions --state Active --filters "key=Target,value=${{ steps.db-config.outputs.ssm_instance_id }}" --query "Sessions[?DocumentName=='AWS-StartPortForwardingSessionToRemoteHost'].SessionId" --output text)
+          # Terminate only sessions started by this job attempt.
+          SESSIONS=$(aws ssm describe-sessions --state Active --filters "key=Target,value=${{ steps.db-config.outputs.ssm_instance_id }}" --query "Sessions[?Reason=='gh-${GITHUB_REPOSITORY_ID}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}' && DocumentName=='AWS-StartPortForwardingSessionToRemoteHost'].SessionId" --output text)
           for session in $SESSIONS; do
             echo "Terminating SSM session: $session"
             aws ssm terminate-session --session-id $session || true
