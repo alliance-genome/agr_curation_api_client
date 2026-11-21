@@ -4,17 +4,16 @@ name: Database Integration Tests
 # These tests validate search functionality with real data
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
     branches:
       - main
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
   database-tests:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     permissions:
       contents: read
-      pull-requests: write
       id-token: write  # Required for OIDC
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -275,30 +274,6 @@ jobs:
           pytest -v tests/ -k "not test_okta" --tb=short
 
           echo "✅ All database integration tests passed!"
-
-      - name: Post test results comment
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const status = '${{ job.status }}';
-            const emoji = status === 'success' ? '✅' : '❌';
-            const statusText = status === 'success' ? 'PASSED' : 'FAILED';
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `${emoji} **Database Integration Tests ${statusText}**
-
-              Tests ran against production curation database (read-only access).
-
-              ${status === 'success'
-                ? '✅ All fuzzy search and entity lookup tests passed with real data!'
-                : '❌ Some tests failed. Check the workflow logs for details.'}
-
-              [View full test results →](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`
-            });
 
       - name: Cleanup
         if: always() && steps.tunnel.outputs.pid != ''
